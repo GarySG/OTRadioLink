@@ -62,6 +62,26 @@ Author(s) / Copyright (s): Damon Hart-Davis 2013--2016
 #define ENABLE_OCCUPANCY_SUPPORT
 #endif
 
+#ifdef CONFIG_Trial2013Winter_Round2_LVBHSHNOTX // REV2 cut4: local valve control, boiler hub, stats hub & No Stats TX.
+#define CONFIG_Trial2013Winter_Round2 // Just like normal REV2 except...
+// IF DEFINED: this unit will act as a thermostat controlling a local TRV (and calling for heat from the boiler), else is a sensor/hub unit.
+#define ENABLE_LOCAL_TRV
+// IF DEFINED: this unit controls a valve, but provides slave valve control only.
+#undef ENABLE_SLAVE_TRV
+// IF DEFINED: this unit can act as boiler-control hub listening to remote thermostats, possibly in addition to controlling a local TRV.
+#define ENABLE_BOILER_HUB
+// IF DEFINED: allow RX of stats frames.
+#define ENABLE_STATS_RX
+// IF DEFINED: allow TX of stats frames.
+#undef ENABLE_STATS_TX
+// IF DEFINED: use active-low LEARN button(s).  Needs ENABLE_SINGLETON_SCHEDULE.
+#define ENABLE_LEARN_BUTTON // OPTIONAL ON V0.09 PCB1
+// IF DEFINED: this unit supports CLI over the USB/serial connection, eg for run-time reconfig.
+#define ENABLE_CLI
+// IF DEFINED: support for general timed and multi-input occupancy detection / use.
+#define ENABLE_OCCUPANCY_SUPPORT
+#endif
+
 #ifdef CONFIG_Trial2013Winter_Round2_LVBH // REV2 cut4: local valve control, boiler hub & TX.
 #define CONFIG_Trial2013Winter_Round2 // Just like normal REV2 except...
 // IF DEFINED: try to trim memory (primarily RAM, also code/Flash) space used.
@@ -72,6 +92,28 @@ Author(s) / Copyright (s): Damon Hart-Davis 2013--2016
 #undef ENABLE_SLAVE_TRV
 // IF DEFINED: this unit can act as boiler-control hub listening to remote thermostats, possibly in addition to controlling a local TRV.
 #define ENABLE_BOILER_HUB
+// IF DEFINED: allow RX of stats frames.
+#undef ENABLE_STATS_RX
+// IF DEFINED: allow TX of stats frames.
+#define ENABLE_STATS_TX
+// IF DEFINED: use active-low LEARN button(s).  Needs ENABLE_SINGLETON_SCHEDULE.
+#define ENABLE_LEARN_BUTTON // OPTIONAL ON V0.09 PCB1
+// IF DEFINED: this unit supports CLI over the USB/serial connection, eg for run-time reconfig.
+#define ENABLE_CLI
+// IF DEFINED: support for general timed and multi-input occupancy detection / use.
+#define ENABLE_OCCUPANCY_SUPPORT
+#endif
+
+#ifdef CONFIG_Trial2013Winter_Round2_LV // REV2 cut4: local valve control, boiler hub & TX.
+#define CONFIG_Trial2013Winter_Round2 // Just like normal REV2 except...
+// IF DEFINED: try to trim memory (primarily RAM, also code/Flash) space used.
+#undef ENABLE_TRIMMED_MEMORY
+// IF DEFINED: this unit will act as a thermostat controlling a local TRV (and calling for heat from the boiler), else is a sensor/hub unit.
+#define ENABLE_LOCAL_TRV
+// IF DEFINED: this unit controls a valve, but provides slave valve control only.
+#undef ENABLE_SLAVE_TRV
+// IF DEFINED: this unit can act as boiler-control hub listening to remote thermostats, possibly in addition to controlling a local TRV.
+#undef ENABLE_BOILER_HUB
 // IF DEFINED: allow RX of stats frames.
 #undef ENABLE_STATS_RX
 // IF DEFINED: allow TX of stats frames.
