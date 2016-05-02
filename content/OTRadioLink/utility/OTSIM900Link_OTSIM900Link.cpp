@@ -32,13 +32,13 @@ namespace OTSIM900Link
  * as may be called before run-time fully initialised!
  */
 OTSIM900Link::OTSIM900Link(uint8_t hardPwrPin, uint8_t pwrPin, uint8_t rxPin, uint8_t txPin)
-  : HARD_PWR_PIN(hardPwrPin), PWR_PIN(pwrPin), softSerial(rxPin, txPin)
+  : duration(3), HARD_PWR_PIN(hardPwrPin), PWR_PIN(pwrPin), softSerial(rxPin, txPin)
 {
   bAvailable = false;
   bPowered = false;
   bPowerLock = false;
   powerTimer = 0;
-  duration = 3; // seconds
+  //duration = 3; // seconds
   config = NULL;
   state = IDLE;
   memset(txQueue, 0, sizeof(txQueue));
@@ -446,7 +446,7 @@ bool OTSIM900Link::checkNetwork()
 bool OTSIM900Link::isRegistered()
 {
 //  Check the GSM registration via AT commands ( "AT+CREG?" returns "+CREG:x,1" or "+CREG:x,5"; where "x" is 0, 1 or 2).
-//  Check the GPRS registration via AT commands ("AT+CGATT?" returns "+CGATT:1" and "AT+CGREG?" returns "+CGREG:x,1" or "+CGREG:x,5"; where "x" is 0, 1 or 2). 
+//  Check the GPRS registration via AT commands ("AT+CGATT?" returns "+CGATT:1" and "AT+CGREG?" returns "+CGREG:x,1" or "+CGREG:x,5"; where "x" is 0, 1 or 2).
     char data[MAX_SIM900_RESPONSE_CHARS];
     print(AT_START);
     print(AT_REGISTRATION);
