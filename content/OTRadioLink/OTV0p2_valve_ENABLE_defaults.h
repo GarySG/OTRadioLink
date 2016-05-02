@@ -22,8 +22,6 @@ Author(s) / Copyright (s): Damon Hart-Davis 2013--2016
  *
  * This should define (or nominally #undef) ONLY symbols with names starting "ENABLE_".
  *
- * This should define (or nominally #undef) ONLY symbols with names starting "ENABLE_".
- *
  * Specific sets by date may also be available.
  *
  * These are meant be be fairly stable over time;
@@ -49,7 +47,9 @@ Author(s) / Copyright (s): Damon Hart-Davis 2013--2016
 // IF DEFINED: enable use AVR's 'idle' mode to stop the CPU but leave I/O clocls (eg Serial) running to save power.
 // DHD20150920: NOT RECOMMENDED AS SEEMS TO CAUSE SOME BOARDS (REV1,REV9) TO CRASH.
 #undef ENABLE_USE_OF_AVR_IDLE_MODE
-// Provide software RTC support by default.
+// IF DEFINED: use (slow, low energy) 32768Hz-clock-based watchdog to recover from some software hangups.
+#define ENABLE_WATCHDOG_SLOW
+// IF DEFINED: provide software RTC support by default.
 #define ENABLE_RTC_INTERNAL_SIMPLE
 // IF DEFINED: try to trim memory (primarily RAM, also code/Flash) space used.
 #undef ENABLE_TRIMMED_MEMORY
@@ -99,6 +99,11 @@ Author(s) / Copyright (s): Damon Hart-Davis 2013--2016
 #undef ENABLE_FREQUENT_STATS_TX
 // IF DEFINED: the (>>8) value of this flag is the maximum JSON frame size allowed (bytes).
 #undef ENABLE_JSON_STATS_LEN_CAP
+// IF DEFINED: unconditionally suppress the "@" ID field (carrier supplies it or equiv) to save bandwidth.
+#undef ENABLE_JSON_SUPPRESSED_ID
+// IF DEFINED: unconditionally suppress the "+" ID field and aim for minimum JSON frame size, for poor/noisy comms channels.
+// NOTE: minimising the JSON frame will overall *reduce* bandwidth efficiency and ability to diagnose TX problems.
+#undef ENABLE_JSON_FRAME_MINIMISED
 // IF DEFINED: enable a CLI-settable setback lockout (hours/days) to establish a baseline before engaging energy saving setbacks.
 #undef ENABLE_SETBACK_LOCKOUT_COUNTDOWN
 //////////////////////////////////////// SENSOR OPTIONS (and support for them)

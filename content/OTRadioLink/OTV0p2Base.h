@@ -19,8 +19,8 @@ Author(s) / Copyright (s): Damon Hart-Davis 2015--2016
 #ifndef ARDUINO_LIB_OTV0P2BASE_H
 #define ARDUINO_LIB_OTV0P2BASE_H
 
-#define ARDUINO_LIB_OTV0P2BASE_VERSION_MAJOR 0
-#define ARDUINO_LIB_OTV0P2BASE_VERSION_MINOR 9
+#define ARDUINO_LIB_OTV0P2BASE_VERSION_MAJOR 1
+#define ARDUINO_LIB_OTV0P2BASE_VERSION_MINOR 0
 
 // Base hardware, power and system management for V0p2 AVR-based (ATMega328P) OpenTRV boards.
 
@@ -97,6 +97,7 @@ Author(s) / Copyright (s): Damon Hart-Davis 2015--2016
 #include "utility/OTV0P2BASE_Serial_IO.h"
 // Soft Serial.
 #include "utility/OTV0P2BASE_SoftSerial.h"
+#include "utility/OTV0P2BASE_SoftSerial2.h"
 
 // Specialist simple CRC support.
 #include "utility/OTV0P2BASE_CRC.h"
