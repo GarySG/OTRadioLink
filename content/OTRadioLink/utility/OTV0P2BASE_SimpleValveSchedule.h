@@ -18,21 +18,26 @@ Author(s) / Copyright (s): Damon Hart-Davis 2015
 
 /*
  Simple schedule support for TRV.
+
+ V0p2/AVR only for now.
  */
 
 #ifndef OTV0P2BASE_SIMPLEVALVESCHEDULE_H
 #define OTV0P2BASE_SIMPLEVALVESCHEDULE_H
 
 #include "OTV0P2BASE_EEPROM.h"
-
+#include "OTV0P2BASE_Util.h"
 
 namespace OTV0P2BASE
 {
 
 
+#ifdef ARDUINO_ARCH_AVR
+
 // Simple single-button (per programme) on-time scheduler, for individual TRVs.
 // Uses one EEPROM byte per program.
 // Has an on-time that may be varied by, for example, comfort level.
+#define SimpleValveScheduleBase_DEFINED
 class SimpleValveScheduleBase
     {
     public:
@@ -51,7 +56,7 @@ class SimpleValveScheduleBase
         // based on basic scheduled on time and allowing for some wobble in the timing resolution.
         // DHD20151122: even half an hour may not be enough if very cold and heating system not good.
         // DHD20160112: with 60m BASIC_SCHEDULED_ON_TIME_MINS this should yield ~36m.
-        static const uint8_t PREWARM_MINS = max(30, (SIMPLE_SCHEDULE_GRANULARITY_MINS + (BASIC_SCHEDULED_ON_TIME_MINS/2)));
+        static const uint8_t PREWARM_MINS = OTV0P2BASE::fnmax(30, (SIMPLE_SCHEDULE_GRANULARITY_MINS + (BASIC_SCHEDULED_ON_TIME_MINS/2)));
 
         // Setback period before WARM period to help ensure that the WARM target can be reached on time.
         // Important for slow-to-heat rooms that have become very cold.
@@ -122,6 +127,9 @@ class SimpleValveScheduleBase
 //#endif // defined(UNIT_TESTS)
     };
 
+#endif // ARDUINO_ARCH_AVR
+
+
 // Dummy substitute for SimpleValveScheduleBase
 // for when no Scheduler is require to simplify coding.
 // Never has schedules nor allows them to be set.
@@ -129,7 +137,7 @@ class NULLValveSchedule
     {
     public:
         static uint_least16_t getSimpleScheduleOff(uint8_t) { return(~0); }
-        static uint_least16_t getSimpleScheduleOn(uint8_t which)  { return(~0); }
+        static uint_least16_t getSimpleScheduleOn(uint8_t)  { return(~0); }
         static bool isAnyScheduleOnWARMNow() { return(false); }
         static bool isAnyScheduleOnWARMSoon() { return(false); }
         static bool isAnySimpleScheduleSet() { return(false); }

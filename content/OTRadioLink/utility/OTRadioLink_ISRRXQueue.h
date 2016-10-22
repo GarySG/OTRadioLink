@@ -28,7 +28,11 @@ Author(s) / Copyright (s): Damon Hart-Davis 2015
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef ARDUINO
 #include <Arduino.h>
+#endif
+
+#include "OTV0P2BASE_Util.h"
 
 // Use namespaces to help avoid collisions.
 namespace OTRadioLink
@@ -131,7 +135,7 @@ namespace OTRadioLink
                 { queueRXMsgsMin = 0; maxRXMsgLen = 0; }
             virtual uint8_t isFull() const { return(true); }
             virtual volatile uint8_t *_getRXBufForInbound() const { return(NULL); }
-            virtual void _loadedBuf(uint8_t frameLen) { }
+            virtual void _loadedBuf(uint8_t /*frameLen*/) { }
             virtual const volatile uint8_t *peekRXMsg() const { return(NULL); }
             virtual void removeRXMsg() { }
         };
@@ -232,7 +236,7 @@ namespace OTRadioLink
             volatile uint8_t *const b;
             // Maximum allowed single frame in the queue.
             const uint8_t mf;
-            // BUFSIZE-1 (to fit in uint8_t); maximum allowed index in b/buf.
+            // ISRRX_BUFSIZ-1 (to fit in uint8_t); maximum allowed index in b/buf.
             const uint8_t bsm1;
             // Last usable index beyond which there is not enough space for len+maxSizeFrame.
             const uint8_t lui;
@@ -348,16 +352,16 @@ namespace OTRadioLink
         {
         private:
             /*Actual buffer size (bytes). */
-            static const int BUFSIZ = min(256, maxRXBytes * (1+(int)targetISRRXMinQueueCapacity));
+            static const int ISRRX_BUFSIZ = OTV0P2BASE::fnmin(256, maxRXBytes * (1+(int)targetISRRXMinQueueCapacity));
             /**Buffer holding a circular queue.
              * Contains a circular sequence of (len,data+) segments.
              * Wrapping around the end is done with a len==0 segment or hitting the end exactly.
              */
-            volatile uint8_t buf[BUFSIZ];
+            volatile uint8_t buf[ISRRX_BUFSIZ];
         public:
-            ISRRXQueueVarLenMsg() : ISRRXQueueVarLenMsgBase(maxRXBytes, buf, (uint8_t)(BUFSIZ-1)) { }
+            ISRRXQueueVarLenMsg() : ISRRXQueueVarLenMsgBase(maxRXBytes, buf, (uint8_t)(ISRRX_BUFSIZ-1)) { }
             /*Guaranteed minimum number of (full-length) messages that can be queued. */
-            static const uint8_t MinQueueCapacityMsgs = BUFSIZ / (maxRXBytes + 1);
+            static const uint8_t MinQueueCapacityMsgs = ISRRX_BUFSIZ / (maxRXBytes + 1);
             // Fetches the current inbound RX minimum queue capacity and maximum RX raw message size.
             virtual void getRXCapacity(uint8_t &queueRXMsgsMin, uint8_t &maxRXMsgLen) const
                 { queueRXMsgsMin = MinQueueCapacityMsgs; maxRXMsgLen = maxRXBytes; }

@@ -13,10 +13,10 @@ KIND, either express or implied. See the Licence for the
 specific language governing permissions and limitations
 under the Licence.
 
-Author(s) / Copyright (s): Damon Hart-Davis 2013--2015
+Author(s) / Copyright (s): Damon Hart-Davis 2013--2016
 */
 
-//#include <OTV0p2Base.h>
+#include <stdlib.h>
 
 #include "OTRadValve_ModelledRadValve.h"
 
@@ -26,28 +26,11 @@ namespace OTRadValve
     {
 
 
-// Offset from raw temperature to get reference temperature in C/16.
-static const int8_t refTempOffsetC16 = 8;
-
-ModelledRadValveInputState::ModelledRadValveInputState(const int realTempC16) :
+ModelledRadValveInputState::ModelledRadValveInputState(const int_fast16_t realTempC16) :
     targetTempC(12 /* FROST */),
     minPCOpen(OTRadValve::DEFAULT_VALVE_PC_MIN_REALLY_OPEN), maxPCOpen(100),
     widenDeadband(false), glacial(false), hasEcoBias(false), inBakeMode(false), fastResponseRequired(false)
     { setReferenceTemperatures(realTempC16); }
-
-// Calculate reference temperature from real temperature.
-// Proportional temperature regulation is in a 1C band.
-// By default, for a given target XC the rad is off at (X+1)C so temperature oscillates around that point.
-// This routine shifts the reference point at which the rad is off to (X+0.5C)
-// ie to the middle of the specified degree, which is more intuitive,
-// and which may save a little energy if users target the specified temperatures.
-// Suggestion c/o GG ~2014/10 code, and generally less misleading anyway!
-void ModelledRadValveInputState::setReferenceTemperatures(const int currentTempC16)
-  {
-  const int referenceTempC16 = currentTempC16 + refTempOffsetC16; // TODO-386: push targeted temperature down by 0.5C to middle of degree.
-  refTempC16 = referenceTempC16;
-  }
-
 
 
 // Minimum slew/error % distance in central range; should be larger than smallest temperature-sensor-driven step (6) to be effective; [1,100].
@@ -71,8 +54,8 @@ void ModelledRadValveInputState::setReferenceTemperatures(const int currentTempC
 
 // Derived from basic slew values.
 #ifndef TRV_SLEW_GLACIAL
-#define TRV_SLEW_PC_PER_MIN_VFAST (min(34,(4*TRV_MAX_SLEW_PC_PER_MIN))) // Takes >= 3 minutes for full travel.
-#define TRV_SLEW_PC_PER_MIN_FAST (min(20,(2*TRV_MAX_SLEW_PC_PER_MIN))) // Takes >= 5 minutes for full travel.
+#define TRV_SLEW_PC_PER_MIN_VFAST (OTV0P2BASE::fnmin(34,(4*TRV_MAX_SLEW_PC_PER_MIN))) // Takes >= 3 minutes for full travel.
+#define TRV_SLEW_PC_PER_MIN_FAST (OTV0P2BASE::fnmin(20,(2*TRV_MAX_SLEW_PC_PER_MIN))) // Takes >= 5 minutes for full travel.
 #else
 #define TRV_SLEW_PC_PER_MIN_FAST TRV_MAX_SLEW_PC_PER_MIN
 #define TRV_SLEW_PC_PER_MIN_VFAST TRV_MAX_SLEW_PC_PER_MIN
@@ -84,7 +67,7 @@ void ModelledRadValveInputState::setReferenceTemperatures(const int currentTempC
 // Simple mean filter.
 // Find mean of group of ints where sum can be computed in an int without loss.
 // TODO: needs a unit test or three.
-template<size_t N> int smallIntMean(const int data[N])
+template<size_t N> int_fast16_t smallIntMean(const int_fast16_t data[N])
   {
   // Extract mean.
   // Assume values and sum will be nowhere near the limits.
@@ -95,7 +78,7 @@ template<size_t N> int smallIntMean(const int data[N])
   }
 
 // Get smoothed raw/unadjusted temperature from the most recent samples.
-int ModelledRadValveState::getSmoothedRecent() const
+int_fast16_t ModelledRadValveState::getSmoothedRecent() const
   { return(smallIntMean<filterLength>(prevRawTempC16)); }
 
 //// Compute an estimate of rate/velocity of temperature change in C/16 per minute/tick.
@@ -124,18 +107,73 @@ int ModelledRadValveState::getSmoothedRecent() const
 static const uint8_t MAX_TEMP_JUMP_C16 = 3; // 3/16C.
 
 // Minimum drop in temperature over recent time to trigger 'window open' response; strictly +ve.
-// Should probably be significantly larger than MAX_TEMP_JUMP_C16 to avoid triggering alongside any filtering.
-// Needs to be be a fast enough fall NOT to be triggered by normal temperature gyrations close to a radiator.
-// Nominally target something like ~1C drop over a few minutes and/or the filter length.
+// Nominally target up 0.25C--1C drop over a few minutes (limited by the filter length).
 // TODO-621: in case of very sharp drop in temperature,
 // assume that a window or door has been opened,
 // by accident or to ventilate the room,
 // so suppress heating to reduce waste.
-static const uint8_t MIN_WINDOW_OPEN_TEMP_FALL_C16 = 16; // 1C.
+//
+// See one sample 'airing' data set:
+//     http://www.earth.org.uk/img/20160930-16WWmultisensortempL.README.txt
+//     http://www.earth.org.uk/img/20160930-16WWmultisensortempL.png
+//     http://www.earth.org.uk/img/20160930-16WWmultisensortempL.json.xz
+//
+// 7h (hall, A9B2F7C089EECD89) saw a sharp fall and recovery, possibly from an external door being opened:
+// 1C over 10 minutes then recovery by nearly 0.5C over next half hour.
+// Note that there is a potential 'sensitising' occupancy signal available,
+// ie sudden occupancy may allow triggering with a lower temperature drop.
+//[ "2016-09-30T06:45:18Z", "", {"@":"A9B2F7C089EECD89","+":15,"T|C16":319,"H|%":65,"O":1} ]
+//[ "2016-09-30T06:57:10Z", "", {"@":"A9B2F7C089EECD89","+":2,"L":101,"T|C16":302,"H|%":60} ]
+//[ "2016-09-30T07:05:10Z", "", {"@":"A9B2F7C089EECD89","+":4,"T|C16":303,"v|%":0} ]
+//[ "2016-09-30T07:09:08Z", "", {"@":"A9B2F7C089EECD89","+":5,"tT|C":16,"T|C16":305} ]
+//[ "2016-09-30T07:21:08Z", "", {"@":"A9B2F7C089EECD89","+":8,"O":2,"T|C16":308,"H|%":64} ]
+//[ "2016-09-30T07:33:12Z", "", {"@":"A9B2F7C089EECD89","+":11,"tS|C":0,"T|C16":310} ]
+//
+// 1g (bedroom, FEDA88A08188E083) saw a slower fall, assumed from airing:
+// initially of .25C in 12m, 0.75C over 1h, bottoming out ~2h later down ~2C.
+// Note that there is a potential 'sensitising' occupancy signal available,
+// ie sudden occupancy may allow triggering with a lower temperature drop.
+//[ "2016-09-30T06:27:30Z", "", {"@":"FEDA88A08188E083","+":8,"tT|C":17,"tS|C":0} ]
+//[ "2016-09-30T06:31:38Z", "", {"@":"FEDA88A08188E083","+":9,"gE":0,"T|C16":331,"H|%":67} ]
+//[ "2016-09-30T06:35:30Z", "", {"@":"FEDA88A08188E083","+":10,"T|C16":330,"O":2,"L":2} ]
+//[ "2016-09-30T06:43:30Z", "", {"@":"FEDA88A08188E083","+":12,"H|%":65,"T|C16":327,"O":2} ]
+//[ "2016-09-30T06:59:34Z", "", {"@":"FEDA88A08188E083","+":0,"T|C16":325,"H|%":64,"O":1} ]
+//[ "2016-09-30T07:07:34Z", "", {"@":"FEDA88A08188E083","+":2,"H|%":63,"T|C16":324,"O":1} ]
+//[ "2016-09-30T07:15:36Z", "", {"@":"FEDA88A08188E083","+":4,"L":95,"tT|C":13,"tS|C":4} ]
+//[ "2016-09-30T07:19:30Z", "", {"@":"FEDA88A08188E083","+":5,"vC|%":0,"gE":0,"T|C16":321} ]
+//[ "2016-09-30T07:23:29Z", "", {"@":"FEDA88A08188E083","+":6,"T|C16":320,"H|%":63,"O":1} ]
+//[ "2016-09-30T07:31:27Z", "", {"@":"FEDA88A08188E083","+":8,"L":102,"T|C16":319,"H|%":63} ]
+// ...
+//[ "2016-09-30T08:15:27Z", "", {"@":"FEDA88A08188E083","+":4,"T|C16":309,"H|%":61,"O":1} ]
+//[ "2016-09-30T08:27:41Z", "", {"@":"FEDA88A08188E083","+":7,"vC|%":0,"T|C16":307} ]
+//[ "2016-09-30T08:39:33Z", "", {"@":"FEDA88A08188E083","+":10,"T|C16":305,"H|%":61,"O":1} ]
+//[ "2016-09-30T08:55:29Z", "", {"@":"FEDA88A08188E083","+":14,"T|C16":303,"H|%":61,"O":1} ]
+//[ "2016-09-30T09:07:37Z", "", {"@":"FEDA88A08188E083","+":1,"gE":0,"T|C16":302,"H|%":61} ]
+//[ "2016-09-30T09:11:29Z", "", {"@":"FEDA88A08188E083","+":2,"T|C16":301,"O":1,"L":175} ]
+//[ "2016-09-30T09:19:41Z", "", {"@":"FEDA88A08188E083","+":4,"T|C16":301,"H|%":61,"O":1} ]
+//
+// Should probably be significantly larger than MAX_TEMP_JUMP_C16 to avoid triggering alongside any filtering.
+// Needs to be be a fast enough fall NOT to be triggered by normal temperature gyrations close to a radiator.
+static const uint8_t MIN_WINDOW_OPEN_TEMP_FALL_C16 = OTV0P2BASE::fnmax(MAX_TEMP_JUMP_C16+2, 5); // Just over 1/4C.
 // Minutes over which temperature should be falling to trigger 'window open' response; strictly +ve.
 // TODO-621.
 // Needs to be be a fast enough fall NOT to be triggered by normal temperature gyrations close to a radiator.
-static const uint8_t MIN_WINDOW_OPEN_TEMP_FALL_M = 10;
+// Is capped in practice at the filter length.
+static const uint8_t MIN_WINDOW_OPEN_TEMP_FALL_M = 13;
+
+// Construct an instance, with sensible defaults, and current (room) temperature from the input state.
+// Does its initialisation with room temperature immediately.
+ModelledRadValveState::ModelledRadValveState(const ModelledRadValveInputState &inputState) :
+  initialised(true),
+  isFiltering(false),
+  valveMoved(false),
+  cumulativeMovementPC(0),
+  valveTurndownCountdownM(0), valveTurnupCountdownM(0)
+  {
+  // Fills array exactly as tick() would when !initialised.
+  const int_fast16_t rawTempC16 = inputState.refTempC16 - ModelledRadValveInputState::refTempOffsetC16; // Remove adjustment for target centre.
+  for(int i = filterLength; --i >= 0; ) { prevRawTempC16[i] = rawTempC16; }
+  }
 
 // Perform per-minute tasks such as counter and filter updates then recompute valve position.
 // The input state must be complete including target and reference temperatures
@@ -143,7 +181,11 @@ static const uint8_t MIN_WINDOW_OPEN_TEMP_FALL_M = 10;
 //   * valvePCOpenRef  current valve position UPDATED BY THIS ROUTINE, in range [0,100]
 void ModelledRadValveState::tick(volatile uint8_t &valvePCOpenRef, const ModelledRadValveInputState &inputState)
   {
-  const int rawTempC16 = inputState.refTempC16 - refTempOffsetC16; // Remove adjustment for target centre.
+  // Forget last event if any.
+  clearEvent();
+
+  const int_fast16_t rawTempC16 = inputState.refTempC16 - ModelledRadValveInputState::refTempOffsetC16; // Remove adjustment for target centre.
+  // Do some one-off work on first tick in new instance.
   if(!initialised)
     {
     // Fill the filter memory with the current room temperature.
@@ -166,7 +208,7 @@ void ModelledRadValveState::tick(volatile uint8_t &valvePCOpenRef, const Modelle
   // Force filtering (back) on if any adjacent past readings are wildly different.
   if(!isFiltering)
     {
-    for(int i = 1; i < filterLength; ++i) { if(abs(prevRawTempC16[i] - prevRawTempC16[i-1]) > MAX_TEMP_JUMP_C16) { isFiltering = true; break; } }
+    for(unsigned int i = 1; i < filterLength; ++i) { if(abs(prevRawTempC16[i] - prevRawTempC16[i-1]) > MAX_TEMP_JUMP_C16) { isFiltering = true; break; } }
     }
 
   // Tick count down timers.
@@ -215,8 +257,9 @@ V0P2BASE_DEBUG_SERIAL_PRINTLN();
 #endif
 
   // Possibly-adjusted and/or smoothed temperature to use for targeting.
-  const int adjustedTempC16 = isFiltering ? (getSmoothedRecent() + refTempOffsetC16) : inputState.refTempC16;
-  const int8_t adjustedTempC = (adjustedTempC16 >> 4);
+  const int_fast16_t adjustedTempC16 = isFiltering ? (getSmoothedRecent() + ModelledRadValveInputState::refTempOffsetC16) : inputState.refTempC16;
+  // When reduced to whole Celsius then fewer bits are needed to cover expected temperatures.
+  const int_fast8_t adjustedTempC = (int_fast8_t) (adjustedTempC16 >> 4);
 
   // (Well) under temp target: open valve up.
   if(adjustedTempC < inputState.targetTempC)
@@ -229,29 +272,38 @@ V0P2BASE_DEBUG_SERIAL_PRINTLN();
     // Avoid trying to heat the outside world when a window or door is opened (TODO-621).
     // This is a short-term tactical response to a persistent cold draught,
     // eg from a window being opened to ventilate a room manually,
-    // or a door being left open.
+    // or an exterior door being left open.
     //
     // BECAUSE not currently very close to target
     // (possibly because of sudden temperature drop already from near target)
     // AND IF system has 'eco' bias (so tries harder to save energy)
-    // and the temperature above a minimum frost safety threshold
-    // and the temperature is currently falling
+    // and no fast response has been requested (eg by recent user operation of the controls)
+    // and the temperature is at/above a minimum frost safety threshold
+    // and the temperature is currently falling (over the last measurement period)
     // and the temperature fall over the last few minutes is large
     // THEN attempt to stop calling for heat immediately and continue to turn down
-    // (if not inhibited from turning down, in which case avoid opening any further).
+    // (though if inhibited from turning down yet*, then instead avoid opening any further).
     // Turning the valve down should also inhibit reopening it for a little while,
     // even once the temperature has stopped falling.
+    //
+    // *This may be because the valve has just recently been closed
+    // in which case some sort of a temperature drop is not astonishing.
     //
     // It seems sensible to stop calling for heat immediately if one of these events seems to be happening,
     // though that (a) may not stop the boiler and heat delivery if other rooms are still calling for heat
     // and (b) may prevent the boiler being started again for a while even if this was a false alarm,
     // so may annoy users and make heating control seem erratic,
     // so only do this in 'eco' mode where permission has been given to try harder to save energy.
+    //
+    // TODO: could restrict this to when (valvePCOpen >= inputState.minPCOpen) to save some thrashing and allow lingering.
+    // TODO: could explicitly avoid applying this when valve has recently been closed to avoid unwanted feedback loop.
     if(inputState.hasEcoBias &&
-       (adjustedTempC > MIN_VALVE_TARGET_C) &&
+       (!inputState.fastResponseRequired) && // Avoid subverting recent manual call for heat.
+       (adjustedTempC >= MIN_TARGET_C) &&
        (getRawDelta() < 0) &&
        (getRawDelta(MIN_WINDOW_OPEN_TEMP_FALL_M) <= -(int)MIN_WINDOW_OPEN_TEMP_FALL_C16))
         {
+        setEvent(MRVE_DRAUGHT); // Report draught detected.
         if(!dontTurndown())
           {
           // Try to turn down far enough to stop calling for heat immediately.
@@ -309,10 +361,13 @@ V0P2BASE_DEBUG_SERIAL_PRINTLN();
       // For this to work, don't set a wide deadband when, eg, user has just touched the controls.
       // *Jump to just over moderately-open threshold to defeat any small rounding errors in the data path, etc,
       // since boiler is likely to regard this threshold as a trigger to immediate action.
-      const uint8_t cappedModeratelyOpen = min(inputState.maxPCOpen, min(99, OTRadValve::DEFAULT_VALVE_PC_MODERATELY_OPEN+TRV_SLEW_PC_PER_MIN_FAST));
+      const uint8_t cappedModeratelyOpen = OTV0P2BASE::fnmin(inputState.maxPCOpen, OTV0P2BASE::fnmin((uint8_t)99, (uint8_t)(OTRadValve::DEFAULT_VALVE_PC_MODERATELY_OPEN+TRV_SLEW_PC_PER_MIN_FAST)));
       if((valvePCOpen < cappedModeratelyOpen) &&
          (inputState.fastResponseRequired || (vBelowTarget && !inputState.widenDeadband)))
-          { return(cappedModeratelyOpen); }
+          {
+          setEvent(MRVE_OPENFAST);
+          return(cappedModeratelyOpen);
+          }
 
       // Ensure that the valve opens quickly from cold for acceptable response (TODO-593)
       // both locally in terms of valve position and also in terms of the boiler responding.
@@ -320,11 +375,11 @@ V0P2BASE_DEBUG_SERIAL_PRINTLN();
       const uint8_t slewRate =
           ((valvePCOpen > OTRadValve::DEFAULT_VALVE_PC_MODERATELY_OPEN) || !inputState.widenDeadband) ?
               TRV_MAX_SLEW_PC_PER_MIN : TRV_SLEW_PC_PER_MIN_VFAST;
-      const uint8_t minOpenFromCold = max(slewRate, inputState.minPCOpen);
+      const uint8_t minOpenFromCold = OTV0P2BASE::fnmax(slewRate, inputState.minPCOpen);
       // Open to 'minimum' likely open state immediately if less open currently.
       if(valvePCOpen < minOpenFromCold) { return(minOpenFromCold); }
       // Slew open relatively gently...
-      return(min((uint8_t)(valvePCOpen + slewRate), inputState.maxPCOpen)); // Capped at maximum.
+      return(OTV0P2BASE::fnmin((uint8_t)(valvePCOpen + slewRate), inputState.maxPCOpen)); // Capped at maximum.
       }
     // Keep open at maximum allowed.
     return(inputState.maxPCOpen);
@@ -367,7 +422,7 @@ V0P2BASE_DEBUG_SERIAL_PRINTLN();
       // TODO-593: if user is manually adjusting device then attempt to respond quickly.
       if(((!inputState.hasEcoBias) || justOverTemp || isFiltering) &&
          (!inputState.fastResponseRequired) &&
-         (valvePCOpen > constrain(((int)lingerThreshold) + TRV_SLEW_PC_PER_MIN_FAST, TRV_SLEW_PC_PER_MIN_FAST, inputState.maxPCOpen)))
+         (valvePCOpen > OTV0P2BASE::fnconstrain((uint8_t)(lingerThreshold + TRV_SLEW_PC_PER_MIN_FAST), (uint8_t)TRV_SLEW_PC_PER_MIN_FAST, inputState.maxPCOpen)))
         { return(valvePCOpen - TRV_SLEW_PC_PER_MIN_FAST); }
 
       // Else (by default) force to (nearly) off immediately when requested, ie eagerly stop heating to conserve energy.
@@ -392,7 +447,7 @@ V0P2BASE_DEBUG_SERIAL_PRINTLN();
   const uint8_t targetPORaw = tmp * ulpStep;
   // Constrain from below to likely minimum-open value, in part to deal with TODO-117 'linger open' in lieu of boiler bypass.
   // Constrain from above by maximum percentage open allowed, eg for pay-by-volume systems.
-  const uint8_t targetPO = constrain(targetPORaw, inputState.minPCOpen, inputState.maxPCOpen);
+  const uint8_t targetPO = OTV0P2BASE::fnconstrain(targetPORaw, inputState.minPCOpen, inputState.maxPCOpen);
 
   // Reduce spurious valve/boiler adjustment by avoiding movement at all unless current temperature error is significant.
   if(targetPO != valvePCOpen)
@@ -403,8 +458,8 @@ V0P2BASE_DEBUG_SERIAL_PRINTLN();
     // Also increase effective deadband if temperature resolution is lower than 1/16th, eg 8ths => 1+2*ulpStep minimum.
 // FIXME //    const uint8_t realMinUlp = 1 + (inputState.isLowPrecision ? 2*ulpStep : ulpStep); // Assume precision no coarser than 1/8C.
     const uint8_t realMinUlp = 1 + ulpStep;
-    const uint8_t _minAbsSlew = (uint8_t)(inputState.widenDeadband ? max(min(OTRadValve::DEFAULT_VALVE_PC_MODERATELY_OPEN/2,max(TRV_MAX_SLEW_PC_PER_MIN,2*TRV_MIN_SLEW_PC)), 2+TRV_MIN_SLEW_PC) : TRV_MIN_SLEW_PC);
-    const uint8_t minAbsSlew = max(realMinUlp, _minAbsSlew);
+    const uint8_t _minAbsSlew = (uint8_t)(inputState.widenDeadband ? OTV0P2BASE::fnmax(OTV0P2BASE::fnmin(OTRadValve::DEFAULT_VALVE_PC_MODERATELY_OPEN/2,OTV0P2BASE::fnmax(TRV_MAX_SLEW_PC_PER_MIN,2*TRV_MIN_SLEW_PC)), 2+TRV_MIN_SLEW_PC) : TRV_MIN_SLEW_PC);
+    const uint8_t minAbsSlew = OTV0P2BASE::fnmax(realMinUlp, _minAbsSlew);
     if(tooOpen) // Currently open more than required.  Still below target at top of proportional range.
       {
 //V0P2BASE_DEBUG_SERIAL_PRINTLN_FLASHSTRING("slightly too open");
@@ -418,7 +473,12 @@ V0P2BASE_DEBUG_SERIAL_PRINTLN();
       // TODO-453: avoid closing the valve at all when the (raw) temperature is not rising, so as to minimise valve movement.
       // Since the target is the top of the proportional range than nothing within it requires the temperature to be *forced* down.
       // Possibly don't apply this rule at the very top of the range in case filtering is on and the filtered value moves differently to the raw.
-      if(getRawDelta() <= 0) { return(valvePCOpen); }
+      const int rise = getRawDelta();
+      if(rise < 0) { return(valvePCOpen); }
+      if((0 == rise) && inputState.widenDeadband) { return(valvePCOpen); }
+
+      // TODO-1026: minimise movement in dark to avoid disturbing sleep (darkness indicated with wide deadband).
+      if(inputState.widenDeadband && lsbits < 14) { return(valvePCOpen); }
 
       // Close glacially if explicitly requested or if temperature undershoot has happened or is a danger.
       // Also be glacial if in soft setback which aims to allow temperatures to drift passively down a little.
@@ -454,11 +514,14 @@ V0P2BASE_DEBUG_SERIAL_PRINTLN();
     // TODO-453: minimise valve movement (and thus noise and battery use).
     // Keeping the temperature steady anywhere in the target proportional range
     // while minimising valve movement/noise/etc is a good goal,
-    // so if raw temperatures are rising at the moment then leave the valve as-is.
+    // so if raw temperatures are rising (oer steady) at the moment then leave the valve as-is.
     // If fairly near the final target then also leave the valve as-is (TODO-453 & TODO-451).
+    // TODO-1026: minimise movement in dark to avoid disturbing sleep (dark indicated with wide deadband).
+    // DHD20161020: reduced lower threshold with wide deadband from 8 to 2 (cf 12 without).
     const int rise = getRawDelta();
     if(rise > 0) { return(valvePCOpen); }
-    if( /* (0 == rise) && */ (lsbits >= (inputState.widenDeadband ? 8 : 12))) { return(valvePCOpen); }
+    if((0 == rise) && inputState.widenDeadband) { return(valvePCOpen); }
+    if((lsbits >= (inputState.widenDeadband ? 2 : 12))) { return(valvePCOpen); }
 
     // Open glacially if explicitly requested or if temperature overshoot has happened or is a danger.
     // Also be glacial if in soft setback which aims to allow temperatures to drift passively down a little.
@@ -474,7 +537,7 @@ V0P2BASE_DEBUG_SERIAL_PRINTLN();
     // Slew open faster with comfort bias.  (Or with explicit request? inputState.fastResponseRequired TODO-593)
     const uint8_t maxSlew = (!inputState.hasEcoBias) ? TRV_SLEW_PC_PER_MIN_FAST : TRV_MAX_SLEW_PC_PER_MIN;
     if(slew > maxSlew)
-        { return(valvePCOpen + maxSlew); } // Cap slew rate open.
+        { return(valvePCOpen + maxSlew); } // Cap slew rate towards open.
     // Adjust directly to target.
     return(targetPO);
     }

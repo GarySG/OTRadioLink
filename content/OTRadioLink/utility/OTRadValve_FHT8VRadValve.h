@@ -18,6 +18,8 @@ Author(s) / Copyright (s): Damon Hart-Davis 2013--2016
 
 /*
  * Driver for FHT8V wireless valve actuator (and FS20 protocol encode/decode).
+ *
+ * V0p2/AVR only.
  */
 
 #ifndef ARDUINO_LIB_OTRADVALVE_FHT8VRADVALVE_H
@@ -25,6 +27,8 @@ Author(s) / Copyright (s): Damon Hart-Davis 2013--2016
 
 
 #include <stdint.h>
+#include <stdlib.h>
+
 #include <OTV0p2Base.h>
 #include "OTV0P2BASE_CLI.h"
 #include <OTRadioLink.h>
@@ -37,6 +41,9 @@ namespace OTRadValve
 
 
 // FHT8V radio-controlled radiator valve, using FS20 protocol.
+// Most of this is tied somewhat to the AVR/V0p2 hardware,
+// though some parts are portably testable,
+// and there is nothing fundamental to prevent porting.
 //
 // http://stakeholders.ofcom.org.uk/binaries/spectrum/spectrum-policy-area/spectrum-management/research-guidelines-tech-info/interface-requirements/IR_2030-june2014.pdf
 // IR 2030 - UK Interface Requirements 2030 Licence Exempt Short Range Devices
@@ -45,17 +52,15 @@ namespace OTRadValve
 // Techniques to access spectrum and mitigate interference that provide at least equivalent performance
 // to the techniques described in harmonised standards adopted under Directive 1999/5/EC must be used. Alternatively a duty cycle limit of 1 % may be used.
 // See band 48: http://eur-lex.europa.eu/legal-content/EN/TXT/PDF/?uri=CELEX:32013D0752&from=EN
-//
-class FHT8VRadValveBase : public OTRadValve::AbstractRadValve
+
+// Some utility constants, types and methods.
+#define FHT8VRadValveUtil_DEFINED
+class FHT8VRadValveUtil
   {
   public:
-    // Type of function to extend the TX buffer, returns pointer to 0xff just beyond last content byte appended.
-    // In case of failure this returns NULL.
-    typedef uint8_t *appendToTXBufferFF_t(uint8_t *buf, uint8_t bufSize);
-
     // Type for information content of FHT8V message.
     // Omits the address field unless it is actually used.
-    typedef struct
+    typedef struct fht8v_msg
       {
       uint8_t hc1;
       uint8_t hc2;
@@ -65,6 +70,158 @@ class FHT8VRadValveBase : public OTRadValve::AbstractRadValve
       uint8_t command;
       uint8_t extension;
       } fht8v_msg_t;
+
+    // Typical FHT8V 'open' percentage, though partly depends on valve tails, etc.
+    // This is set to err on the side of slightly open to allow
+    // the 'linger' feature to work to help boilers dump heat with pump over-run
+    // when the the boiler is turned off.
+    // Actual values observed by DHD range from 6% to 25%.
+    static const uint8_t TYPICAL_MIN_PERCENT_OPEN = 10;
+
+    // Appends encoded 200us-bit representation of logical bit (true for 1, false for 0); returns new pointer.
+    // If is1 is false this appends 1100 else (if is1 is true) this appends 111000
+    // msb-first to the byte stream being created by FHT8VCreate200usBitStreamBptr.
+    // bptr must be pointing at the current byte to update on entry which must start off as 0xff;
+    // this will write the byte and increment bptr (and write 0xff to the new location) if one is filled up.
+    // Partial byte can only have even number of bits present, ie be in one of 4 states.
+    // Two least significant bits used to indicate how many bit pairs are still to be filled,
+    // so initial 0xff value (which is never a valid complete filled byte) indicates 'empty'.
+    // Exposed primarily to allow unit testing.
+    static uint8_t *_FHT8VCreate200usAppendEncBit(uint8_t *bptr, const bool is1);
+
+    // Returns 1 if there is an odd number of 1 bits in v.
+    static inline uint8_t xor_parity_even_bit(uint8_t v)
+        {
+        v ^= (v >> 4);
+        v ^= (v >> 2);
+        v ^= (v >> 1);
+        return(v & 1);
+        }
+
+    // For longest-possible encoded FHT8V/FS20 command in bytes plus terminating 0xff.
+    static const uint8_t MIN_FHT8V_200US_BIT_STREAM_BUF_SIZE = 46;
+    // Create stream of bytes to be transmitted to FHT80V at 200us per bit, msbit of each byte first.
+    // Byte stream is terminated by 0xff byte which is not a possible valid encoded byte.
+    // On entry the populated FHT8V command struct is passed by pointer.
+    // On exit, the memory block starting at buffer contains the low-byte, msbit-first, 0xff terminated TX sequence.
+    // The maximum and minimum possible encoded message sizes are 35 (all zero bytes) and 45 (all 0xff bytes) bytes long.
+    // Note that a buffer space of at least 46 bytes is needed to accommodate the longest-possible encoded message plus terminator.
+    // This FHT8V messages is encoded with the FS20 protocol.
+    // Returns pointer to the terminating 0xff on exit.
+    static uint8_t *FHT8VCreate200usBitStreamBptr(uint8_t *bptr, const fht8v_msg_t *command);
+
+    // Decode raw bitstream into non-null command structure passed in; returns true if successful.
+    // Will return non-null if OK, else NULL if anything obviously invalid is detected such as failing parity or checksum.
+    // Finds and discards leading encoded 1 and trailing 0.
+    // Returns NULL on failure, else pointer to next full byte after last decoded.
+    static uint8_t const *FHT8VDecodeBitStream(uint8_t const *bitStream, uint8_t const *lastByte, fht8v_msg_t *command);
+
+    // Approximate maximum transmission (TX) time for bare FHT8V command frame in ms; strictly positive.
+    // This ignores any prefix needed for particular radios such as the RFM23B.
+    // ~80ms upwards.
+    static const uint8_t FHT8V_APPROX_MAX_RAW_TX_MS = ((((MIN_FHT8V_200US_BIT_STREAM_BUF_SIZE-1)*8) + 4) / 5);
+
+    // Returns true if the supplied house code part is valid for an FHT8V valve.
+    static inline bool isValidFHTV8HouseCode(const uint8_t hc) { return(hc <= 99); }
+
+
+    // Helper method to convert from [0,100] %-open scale to [0,255] for FHT8V/FS20 frame.
+    // Designed to be a fast and good approximation avoiding division or multiplication.
+    // In particular this is monotonic and maps both ends of the scale correctly.
+    // Needs to be a good enough approximation to avoid upsetting control algorithms/loops (TODO-593).
+    // (Multiplication on the ATMega328P may be too fast for avoiding it to be important though).
+    // Guaranteed to be 255 when valvePC is 100 (max), and 0 when TRVPercentOpen is 0,
+    // and a decent approximation of (valvePC * 255) / 100 in between.
+    // Unit testable.
+    static inline uint8_t convertPercentTo255Scale(const uint8_t valvePC)
+        {
+//        // This approximation is (valvePC * 250) / 100, ie *2.5, as *(2+0.5).
+//        // Mapped values at various key points on the scale:
+//        //      %       mapped to       target  error   %error  comment
+//        //      0       0               0       0       0       fully closed: must be correct
+//        //      1       3               3       0       0
+//        //     50     125               128     3       1.2     important boiler drop-out threshold
+//        //     67     168               171     3       1.2     important boiler trigger threshold
+//        //     99     248               252     4       1.6
+//        //    100     255               255     0       0       fully open: must be correct
+//        const uint8_t result = (valvePC >= 100) ? 255 :
+//          ((valvePC<<1) + ((1+valvePC)>>1));
+
+//        // This approximation is valvePC * (2 + 1/2 + 1/32) with each part rounded down.
+//        // Mapped values at various key points on the scale:
+//        //      %       mapped to       target  error   %error  comment
+//        //      0       0               0       0       0       fully closed: must be correct
+//        //      1       2               3       1       0.4%
+//        //      2       5               5       0       0
+//        //     50     126               128     2       0.7%    important boiler drop-out threshold
+//        //     67     169               171     2       0.7%    important boiler trigger threshold
+//        //     68     172               173     1       0.4%
+//        //     99     250               252     2       0.7%
+//        //    100     255               255     0       0       fully open: must be correct
+//        const uint8_t result = (valvePC >= 100) ? 255 :
+//          ((valvePC<<1) + (valvePC>>1) + (valvePC>>5));
+
+        // This approximation is valvePC * (2 + 1/2 + 1/16) with each part rounded down.
+        // Mapped values at various key points on the scale:
+        //      %       mapped to       target  error   %error  comment
+        //      0       0               0       0       0       fully closed: must be correct
+        //      1       2               3       1       0.4%
+        //      2       5               5       0       0
+        //     50     128               128     0       0       important boiler drop-out threshold
+        //     66     169               168     1       0.4%
+        //     67     171               171     0       0       important boiler trigger threshold
+        //     68     174               173     1       0.4%
+        //     99     253               252     1       0.4%
+        //    100     255               255     X       0       fully open: must be correct
+        const uint8_t result = (valvePC >= 100) ? 255 :
+          ((valvePC<<1) + (valvePC>>1) + (valvePC>>4));
+
+        return(result);
+        }
+
+    // Helper method to convert from [0,255] scale to [0,100] %-open from FHT8V/FS20 frame.
+    // Designed to be a fast and good approximation avoiding division.
+    // Processes the common valve fully-closed and fully-open cases efficiently.
+    // In particular this is monotonic and maps both ends of the scale correctly.
+    // Needs to be a good enough approximation to avoid upsetting control algorithms/loops (TODO-593).
+    // (Multiplication on the ATMega328P may be too fast for avoiding it to be important though).
+    // Unit testable.
+    static inline uint8_t convert255ScaleToPercent(const uint8_t scale255)
+        {
+        // Mapped values at various key points on the scale:
+        // [0,255]   mapped %       target  error   %error  comment
+        //      0           0       0       0       0       fully closed: must be correct
+        //      1           1       0       1       1
+        //      2           1       1       0       0
+        //    126          49      49       0       0
+        //    128          50      50       0       0       important boiler drop-out threshold
+        //    169          66      66       0       0
+        //    170          67      67       0       0
+        //    171          67      67       0       0       important boiler trigger threshold
+        //    172          67      67       0       0
+        //    254          99     100       1       1
+        //    255         100     100       0       0       fully open: must be correct
+        const uint8_t percentOpen =
+            (0 == scale255) ? 0 :
+            ((255 == scale255) ? 100 :
+            ((uint8_t) ((scale255 * (uint16_t)100U + 199U) >> 8)));
+        return(percentOpen);
+        }
+  };
+
+
+
+#ifdef ARDUINO_ARCH_AVR
+
+// FIXME: FHT8V code may being loaded into Flash even when not used (TODO-1017)
+
+#define FHT8VRadValveBase_DEFINED
+class FHT8VRadValveBase : public OTRadValve::AbstractRadValve, public FHT8VRadValveUtil
+  {
+  public:
+    // Type of function to extend the TX buffer, returns pointer to 0xff just beyond last content byte appended.
+    // In case of failure this returns NULL.
+    typedef uint8_t *appendToTXBufferFF_t(uint8_t *buf, uint8_t bufSize);
 
   protected:
     // Radio link usually expected to be RFM23B; non-NULL when available.
@@ -80,7 +237,7 @@ class FHT8VRadValveBase : public OTRadValve::AbstractRadValve
 
     // Function to append (stats) trailer(s) to TX buffer (and add trailing 0xff if anything added); NULL if not needed.
     // Pointer set at construction.
-    appendToTXBufferFF_t const *trailerFn;
+    appendToTXBufferFF_t *const trailerFn;
 
     // Construct an instance, providing TX buffer details.
     FHT8VRadValveBase(uint8_t *_buf, uint8_t _bufSize, appendToTXBufferFF_t *trailerFnPtr)
@@ -160,10 +317,7 @@ class FHT8VRadValveBase : public OTRadValve::AbstractRadValve
     volatile uint8_t hc1, hc2;
 
   public:
-    // Returns true if the supplied house code part is valid for an FHT8V valve.
-    static inline bool isValidFHTV8HouseCode(const uint8_t hc) { return(hc <= 99); }
-
-    // Clear both housecode parts (and thus disable use of FHT8V valve).
+     // Clear both housecode parts (and thus disable use of FHT8V valve).
     void clearHC() { hc1 = ~0, hc2 = ~0; resyncWithValve(); }
     // Set (non-volatile) HC1 and HC2 for single/primary FHT8V wireless valve under control.
     // Both parts must be <= 99 for the house code to be valid and the valve used.
@@ -185,12 +339,6 @@ class FHT8VRadValveBase : public OTRadValve::AbstractRadValve
     // Should be set before any sync with the FHT8V.
     void setChannelTX(int8_t channel) { channelTX = channel; }
 
-    // Decode raw bitstream into non-null command structure passed in; returns true if successful.
-    // Will return non-null if OK, else NULL if anything obviously invalid is detected such as failing parity or checksum.
-    // Finds and discards leading encoded 1 and trailing 0.
-    // Returns NULL on failure, else pointer to next full byte after last decoded.
-    static uint8_t const *FHT8VDecodeBitStream(uint8_t const *bitStream, uint8_t const *lastByte, fht8v_msg_t *command);
-
     // Minimum and maximum FHT8V TX cycle times in half seconds: [115.0,118.5].
     // Fits in an 8-bit unsigned value.
     static const uint8_t MIN_FHT8V_TX_CYCLE_HS = (115*2);
@@ -205,30 +353,6 @@ class FHT8VRadValveBase : public OTRadValve::AbstractRadValve
     // will be foregone in this minor cycle,
     inline uint8_t FHT8VTXGapHalfSeconds(const uint8_t hc2, const uint8_t halfSecondCountInMinorCycle)
       { return(FHT8VTXGapHalfSeconds(hc2) - (MAX_HSC - halfSecondCountInMinorCycle)); }
-
-    // For longest-possible encoded FHT8V/FS20 command in bytes plus terminating 0xff.
-    static const uint8_t MIN_FHT8V_200US_BIT_STREAM_BUF_SIZE = 46;
-    // Create stream of bytes to be transmitted to FHT80V at 200us per bit, msbit of each byte first.
-    // Byte stream is terminated by 0xff byte which is not a possible valid encoded byte.
-    // On entry the populated FHT8V command struct is passed by pointer.
-    // On exit, the memory block starting at buffer contains the low-byte, msbit-first bit, 0xff terminated TX sequence.
-    // The maximum and minimum possible encoded message sizes are 35 (all zero bytes) and 45 (all 0xff bytes) bytes long.
-    // Note that a buffer space of at least 46 bytes is needed to accommodate the longest-possible encoded message plus terminator.
-    // This FHT8V messages is encoded with the FS20 protocol.
-    // Returns pointer to the terminating 0xff on exit.
-    static uint8_t *FHT8VCreate200usBitStreamBptr(uint8_t *bptr, const fht8v_msg_t *command);
-
-    // Approximate maximum transmission (TX) time for bare FHT8V command frame in ms; strictly positive.
-    // This ignores any prefix needed for particular radios such as the RFM23B.
-    // ~80ms upwards.
-    static const uint8_t FHT8V_APPROX_MAX_RAW_TX_MS = ((((MIN_FHT8V_200US_BIT_STREAM_BUF_SIZE-1)*8) + 4) / 5);
-
-    // Typical FHT8V 'open' percentage, though partly depends on valve tails, etc.
-    // This is set to err on the side of slightly open to allow
-    // the 'linger' feature to work to help boilers dump heat with pump over-run
-    // when the the boiler is turned off.
-    // Actual values observed by DHD range from 6% to 25%.
-    static const uint8_t TYPICAL_MIN_PERCENT_OPEN = 10;
 
     // Returns true if radio or house codes not set.
     // Remains false while syncing as that is only temporary unavailability.
@@ -323,6 +447,7 @@ class FHT8VRadValveBase : public OTRadValve::AbstractRadValve
     // If no valve is set up then this may simply terminate an empty buffer with 0xff.
     virtual void FHT8VCreateValveSetCmdFrame(const uint8_t valvePC, const bool forceExtraPreamble = false) = 0;
 
+#ifdef ARDUINO_ARCH_AVR
     // EEPROM / non-volatile operations.
     // These operations all affect the same EEPROM backing store,
     // so if these are used the FHT8V instance should be a singleton.
@@ -341,89 +466,6 @@ class FHT8VRadValveBase : public OTRadValve::AbstractRadValve
     // Load EEPROM house codes into primary FHT8V instance at start-up or once cleared in FHT8V instance.
     void nvLoadHC();
 
-    // Helper method to convert from [0,100] %-open scale to [0,255] for FHT8V/FS20 frame.
-    // Designed to be a fast and good approximation avoiding division or multiplication.
-    // In particular this is monotonic and maps both ends of the scale correctly.
-    // Needs to be a good enough approximation to avoid upsetting control algorithms/loops (TODO-593).
-    // (Multiplication on the ATMega328P may be too fast for avoiding it to be important though).
-    // Guaranteed to be 255 when valvePC is 100 (max), and 0 when TRVPercentOpen is 0,
-    // and a decent approximation of (valvePC * 255) / 100 in between.
-    // Unit testable.
-    static inline uint8_t convertPercentTo255Scale(const uint8_t valvePC)
-        {
-//        // This approximation is (valvePC * 250) / 100, ie *2.5, as *(2+0.5).
-//        // Mapped values at various key points on the scale:
-//        //      %       mapped to       target  error   %error  comment
-//        //      0       0               0       0       0       fully closed: must be correct
-//        //      1       3               3       0       0
-//        //     50     125               128     3       1.2     important boiler drop-out threshold
-//        //     67     168               171     3       1.2     important boiler trigger threshold
-//        //     99     248               252     4       1.6
-//        //    100     255               255     0       0       fully open: must be correct
-//        const uint8_t result = (valvePC >= 100) ? 255 :
-//          ((valvePC<<1) + ((1+valvePC)>>1));
-
-//        // This approximation is valvePC * (2 + 1/2 + 1/32) with each part rounded down.
-//        // Mapped values at various key points on the scale:
-//        //      %       mapped to       target  error   %error  comment
-//        //      0       0               0       0       0       fully closed: must be correct
-//        //      1       2               3       1       0.4%
-//        //      2       5               5       0       0
-//        //     50     126               128     2       0.7%    important boiler drop-out threshold
-//        //     67     169               171     2       0.7%    important boiler trigger threshold
-//        //     68     172               173     1       0.4%
-//        //     99     250               252     2       0.7%
-//        //    100     255               255     0       0       fully open: must be correct
-//        const uint8_t result = (valvePC >= 100) ? 255 :
-//          ((valvePC<<1) + (valvePC>>1) + (valvePC>>5));
-
-        // This approximation is valvePC * (2 + 1/2 + 1/16) with each part rounded down.
-        // Mapped values at various key points on the scale:
-        //      %       mapped to       target  error   %error  comment
-        //      0       0               0       0       0       fully closed: must be correct
-        //      1       2               3       1       0.4%
-        //      2       5               5       0       0
-        //     50     128               128     0       0       important boiler drop-out threshold
-        //     66     169               168     1       0.4%
-        //     67     171               171     0       0       important boiler trigger threshold
-        //     68     174               173     1       0.4%
-        //     99     253               252     1       0.4%
-        //    100     255               255     X       0       fully open: must be correct
-        const uint8_t result = (valvePC >= 100) ? 255 :
-          ((valvePC<<1) + (valvePC>>1) + (valvePC>>4));
-
-        return(result);
-        }
-
-    // Helper method to convert from [0,255] scale to [0,100] %-open from FHT8V/FS20 frame.
-    // Designed to be a fast and good approximation avoiding division.
-    // Processes the common valve fully-closed and fully-open cases efficiently.
-    // In particular this is monotonic and maps both ends of the scale correctly.
-    // Needs to be a good enough approximation to avoid upsetting control algorithms/loops (TODO-593).
-    // (Multiplication on the ATMega328P may be too fast for avoiding it to be important though).
-    // Unit testable.
-    static inline uint8_t convert255ScaleToPercent(const uint8_t scale255)
-        {
-        // Mapped values at various key points on the scale:
-        // [0,255]   mapped %       target  error   %error  comment
-        //      0           0       0       0       0       fully closed: must be correct
-        //      1           1       0       1       1
-        //      2           1       1       0       0
-        //    126          49      49       0       0
-        //    128          50      50       0       0       important boiler drop-out threshold
-        //    169          66      66       0       0
-        //    170          67      67       0       0
-        //    171          67      67       0       0       important boiler trigger threshold
-        //    172          67      67       0       0
-        //    254          99     100       1       1
-        //    255         100     100       0       0       fully open: must be correct
-        const uint8_t percentOpen =
-            (0 == scale255) ? 0 :
-            ((255 == scale255) ? 100 :
-            ((uint8_t) ((scale255 * (uint16_t)100U + 199U) >> 8)));
-        return(percentOpen);
-        }
-
     // CLI support.
     // Clear/set house code ("H" or "H nn mm").
     // Will clear/set the non-volatile (EEPROM) values and the live ones.
@@ -434,20 +476,21 @@ class FHT8VRadValveBase : public OTRadValve::AbstractRadValve
             SetHouseCode(FHT8VRadValveBase *const valve) : v(valve) { }
             virtual bool doCommand(char *buf, uint8_t buflen);
         };
+#endif // ARDUINO_ARCH_AVR
 
   };
-
 
 // maxTrailerBytes specifies the maximum number of bytes of trailer that can be added.
 // preambleBytes specifies the space to leave for preamble bytes for remote receiver sync (defaults to RFM23-suitable value).
 // preambleByte specifies the (default) preamble byte value to use (defaults to RFM23-suitable value).
+#define FHT8VRadValve_DEFINED
 template <uint8_t maxTrailerBytes, uint8_t preambleBytes = FHT8VRadValveBase::RFM23_PREAMBLE_BYTES, uint8_t preambleByte = FHT8VRadValveBase::RFM23_PREAMBLE_BYTE>
 class FHT8VRadValve : public FHT8VRadValveBase
   {
   public:
     static const uint8_t FHT8V_MAX_EXTRA_PREAMBLE_BYTES = preambleBytes; // RFM22_PREAMBLE_BYTES
     static const uint8_t FHT8V_MAX_EXTRA_TRAILER_BYTES = maxTrailerBytes; // (1+max(MESSAGING_TRAILING_MINIMAL_STATS_PAYLOAD_BYTES,FullStatsMessageCore_MAX_BYTES_ON_WIRE));
-    static const uint8_t FHT8V_200US_BIT_STREAM_FRAME_BUF_SIZE = (FHT8V_MAX_EXTRA_PREAMBLE_BYTES + (FHT8VRadValve::MIN_FHT8V_200US_BIT_STREAM_BUF_SIZE) + FHT8V_MAX_EXTRA_TRAILER_BYTES); // Buffer space needed.
+    static const uint8_t FHT8V_200US_BIT_STREAM_FRAME_BUF_SIZE = (FHT8V_MAX_EXTRA_PREAMBLE_BYTES + (FHT8VRadValveUtil::MIN_FHT8V_200US_BIT_STREAM_BUF_SIZE) + FHT8V_MAX_EXTRA_TRAILER_BYTES); // Buffer space needed.
 
     // Approximate maximum transmission (TX) time for FHT8V command frame in ms; strictly positive.
     // ~80ms upwards.
@@ -468,7 +511,7 @@ class FHT8VRadValve : public FHT8VRadValveBase
     // If no valve is set up then this may simply terminate an empty buffer with 0xff.
     virtual void FHT8VCreateValveSetCmdFrame(const uint8_t valvePC, const bool forceExtraPreamble = false)
       {
-      FHT8VRadValveBase::fht8v_msg_t command;
+      FHT8VRadValveUtil::fht8v_msg_t command;
       command.hc1 = getHC1();
       command.hc2 = getHC2();
 #ifdef OTV0P2BASE_FHT8V_ADR_USED
@@ -479,11 +522,11 @@ class FHT8VRadValve : public FHT8VRadValveBase
       // Optimised for speed and to avoid pulling in a division subroutine.
       // Guaranteed to be 255 when valvePC is 100 (max), and 0 when TRVPercentOpen is 0,
       // and a decent approximation of (valvePC * 255) / 100 in between.
-      command.extension = convertPercentTo255Scale(valvePC);
+      command.extension = FHT8VRadValveUtil::convertPercentTo255Scale(valvePC);
       // The approximation is (valvePC * 250) / 100, ie *2.5, as *(2+0.5).
 
       // Work out if a trailer is allowed (by security level) and is possible to encode.
-      appendToTXBufferFF_t const *tfp = *trailerFn;
+      appendToTXBufferFF_t *const tfp = *trailerFn;
       const bool doTrailer = (NULL != tfp) && (OTV0P2BASE::getStatsTXLevel() <= OTV0P2BASE::stTXmostUnsec);
 
       // Usually add RFM23-friendly preamble (0xaaaaaaaa sync header) only
@@ -541,6 +584,7 @@ if(bptr - bptrInitial >= bufSize) { panic(F("FHT8V frame too big")); }
       return(true);
       }
   };
+#endif // ARDUINO_ARCH_AVR
 
 
     }

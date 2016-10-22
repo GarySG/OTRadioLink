@@ -39,6 +39,9 @@ Author(s) / Copyright (s): Damon Hart-Davis 2015--2016
   Basic AVR power consumption ticking an (empty) control loop at ~0.5Hz should be ~1uA.
  */
 
+// Basic compatibility support for Arduino and non-Arduino environments.
+#include "utility/OTV0P2BASE_ArduinoCompat.h"
+
 // Hardware tests, eg as used in POST (Power On Self Test).
 #include "utility/OTV0P2BASE_HardwareTests.h"
 
@@ -63,6 +66,7 @@ Author(s) / Copyright (s): Damon Hart-Davis 2015--2016
 
 // Concrete sensor implementations.
 #include "utility/OTV0P2BASE_SensorAmbientLight.h"
+#include "utility/OTV0P2BASE_SensorAmbientLightOccupancy.h"
 #include "utility/OTV0P2BASE_SensorTemperaturePot.h"
 #include "utility/OTV0P2BASE_SensorTemperatureC16Base.h"
 #include "utility/OTV0P2BASE_SensorTMP112.h"
@@ -70,6 +74,9 @@ Author(s) / Copyright (s): Damon Hart-Davis 2015--2016
 #include "utility/OTV0P2BASE_SensorDS18B20.h"
 #include "utility/OTV0P2BASE_SensorQM1.h"
 #include "utility/OTV0P2BASE_SensorOccupancy.h"
+
+// Physical UI, treated as an actuator.
+#include "utility/OTV0P2BASE_ActuatorPhysicalUI.h"
 
 // Basic immutable GPIO assignments and similar.
 #include "utility/OTV0P2BASE_BasicPinAssignments.h"

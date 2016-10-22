@@ -13,13 +13,16 @@ KIND, either express or implied. See the Licence for the
 specific language governing permissions and limitations
 under the Licence.
 
-Author(s) / Copyright (s): Damon Hart-Davis 2013--2015
+Author(s) / Copyright (s): Damon Hart-Davis 2013--2016
                            Deniz Erbilgin 2015
 */
 
 /*
  Serial (USB) I/O.
  
+ For a V0p2 board, write to the hardware serial,
+ otherwise (assuming non-embedded) write to stdout.
+
  Also, simple debug output to the serial port at its default (bootloader BAUD) rate.
 
  The debug support only enabled if V0P2BASE_DEBUG is defined, else does nothing, or at least as little as possible.
@@ -28,12 +31,41 @@ Author(s) / Copyright (s): Damon Hart-Davis 2013--2015
 #ifndef OTV0P2BASE_SERIAL_IO_H
 #define OTV0P2BASE_SERIAL_IO_H
 
+#ifdef ARDUINO
 #include <Arduino.h>
+#else
+#include "utility/OTV0P2BASE_ArduinoCompat.h"
+#endif
+
 #include <OTV0p2Base.h>
 
 
 namespace OTV0P2BASE
 {
+
+
+// Version (code/board) information printed as one line to serial (with line-end, and flushed); machine- and human- parseable.
+// Format: "board VX.X REVY YYYY/Mmm/DD HH:MM:SS".
+// Built as a macro to ensure __DATE__ and __TIME__ expanded in the scope of the caller.
+#define V0p2_serialPrintlnBuildVersion() \
+  do { \
+  OTV0P2BASE::serialPrintAndFlush(F("board V0.2 REV")); \
+  OTV0P2BASE::serialPrintAndFlush(V0p2_REV); \
+  OTV0P2BASE::serialPrintAndFlush(' '); \
+  /* Rearrange date into sensible most-significant-first order, and make it (nearly) fully numeric. */ \
+  /* FIXME: would be better to have this in PROGMEM (Flash) rather than RAM, eg as F() constant. */ \
+  const char _YYYYMmmDD[] = \
+    { \
+    __DATE__[7], __DATE__[8], __DATE__[9], __DATE__[10], \
+    '/', \
+    __DATE__[0], __DATE__[1], __DATE__[2], \
+    '/', \
+    ((' ' == __DATE__[4]) ? '0' : __DATE__[4]), __DATE__[5], \
+    '\0' \
+    }; \
+  OTV0P2BASE::serialPrintAndFlush(_YYYYMmmDD); \
+  OTV0P2BASE::serialPrintlnAndFlush(F(" " __TIME__)); \
+  } while(false)
 
 
 #ifndef V0P2BASE_DEBUG
@@ -60,10 +92,10 @@ namespace OTV0P2BASE
 
 
 
-// Conventions for data sent on V0p2 serial (FTDI) link to indicate 'significant' lines.
-// If the initial character on a line is one of the following distinguished values
+// Conventions for data sent on V0p2 serial (eg FTDI) link to indicate 'significant' lines.
+// If the initial character on the line is one of the following distinguished values
 // then that implies that the entire line is for the described purpose.
-// For example, lines from the V0p2 unit starting with '!' can be written to an error log.
+// For example, lines from the V0p2 unit starting with '!' can treated as an error log.
 enum Serial_LineType_InitChar {
     // Reserved characters at the start of a line from V0p2 to attached server/upstream system.
     SERLINE_START_CHAR_CLI = '>', // CLI prompt.
@@ -74,7 +106,6 @@ enum Serial_LineType_InitChar {
     SERLINE_START_CHAR_RJSTATS = '{', // Remote (JSON) stats log line.
     SERLINE_START_CHAR_STATS = '=' // Local stats log line.
 };
-
 
 
 // Write a single (Flash-resident) string to serial followed by line-end and wait for transmission to complete.
@@ -99,15 +130,15 @@ void serialPrintAndFlush(char c);
 
 // Write a single (Flash-resident) number to serial and wait for transmission to complete.
 // This enables the serial if required and shuts it down afterwards if it wasn't enabled.
-void serialPrintAndFlush(int i, int fmt = DEC);
+void serialPrintAndFlush(int i, int fmt = 10); // Arduino print.h: #define DEC 10
 
 // Write a single (Flash-resident) number to serial and wait for transmission to complete.
 // This enables the serial if required and shuts it down afterwards if it wasn't enabled.
-void serialPrintAndFlush(unsigned u, int fmt = DEC);
+void serialPrintAndFlush(unsigned u, int fmt = 10); // Arduino print.h: #define DEC 10
 
 // Write a single (Flash-resident) number to serial and wait for transmission to complete.
 // This enables the serial if required and shuts it down afterwards if it wasn't enabled.
-void serialPrintAndFlush(unsigned long u, int fmt = DEC);
+void serialPrintAndFlush(unsigned long u, int fmt = 10); // Arduino print.h: #define DEC 10
 
 // Write line-end to serial and wait for transmission to complete.
 // This enables the serial if required and shuts it down afterwards if it wasn't enabled.

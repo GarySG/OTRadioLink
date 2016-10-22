@@ -35,6 +35,7 @@ namespace OTV0P2BASE
 {
 
 
+#if defined(MinimalOneWireBase_DEFINED) // Required definition.
 // External/off-board DS18B20 temperature sensor in nominal 1/16 C.
 // Requires OneWire support.
 // Will in future be templated on:
@@ -50,6 +51,7 @@ namespace OTV0P2BASE
 // Multiple DS18B20s can nominally be supported on one or multiple OW buses.
 // Not all template parameter combinations may be supported.
 // Provides temperature as a signed int value with 0C == 0 at all precisions.
+#define TemperatureC16_DS18B20_DEFINED
 class TemperatureC16_DS18B20 : public TemperatureC16Base
   {
   public:
@@ -157,5 +159,6 @@ class TemperatureC16_DS18B20 : public TemperatureC16Base
     void setCorrect(const int8_t * const corr);
 
   };
+#endif // defined(MinimalOneWireBase_DEFINED) // Required definition.
 }
 #endif

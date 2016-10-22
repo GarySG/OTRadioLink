@@ -20,10 +20,13 @@ Author(s) / Copyright (s): Damon Hart-Davis 2013--2016
  EEPROM space allocation and utilities including some of the simple rolling stats management.
 
  NOTE: NO EEPROM ACCESS SHOULD HAPPEN FROM ANY ISR CODE ELSE VARIOUS FAILURE MODES ARE POSSIBLE
+
+ Mainly V0p2/AVR for now.
  */
 
-
+#ifdef ARDUINO_ARCH_AVR
 #include <util/atomic.h>
+#endif
 
 #include "OTV0P2BASE_EEPROM.h"
 
@@ -33,6 +36,8 @@ Author(s) / Copyright (s): Damon Hart-Davis 2013--2016
 namespace OTV0P2BASE
 {
 
+
+#ifdef ARDUINO_ARCH_AVR
 
 // Updates an EEPROM byte iff not currently already at the specified target value.
 // May be able to selectively erase or write (ie reduce wear) to reach the desired value.
@@ -356,6 +361,8 @@ bool zapStats(uint16_t maxBytesToErase)
     { if(OTV0P2BASE::eeprom_smart_erase_byte(p)) { if(--maxBytesToErase == 0) { return(false); } } } // Stop if out of time...
   return(true); // All done.
   }
+
+#endif // ARDUINO_ARCH_AVR
 
 
 // Range-compress an signed int 16ths-Celsius temperature to a unsigned single-byte value < 0xff.

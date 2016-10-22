@@ -18,12 +18,16 @@ Author(s) / Copyright (s): Damon Hart-Davis 2013--2016
 
 /*
  Temperature potentiometer (pot) dial sensor with UI / occupancy outputs.
+
+ V0p2/AVR specific for now.
  */
 
 #ifndef OTV0P2BASE_SENSORTEMPERATUREPOT_H
 #define OTV0P2BASE_SENSORTEMPERATUREPOT_H
 
+#ifdef ARDUINO
 #include <Arduino.h>
+#endif
 
 #include "OTV0P2BASE_Util.h"
 #include "OTV0P2BASE_Sensor.h"
@@ -33,6 +37,7 @@ namespace OTV0P2BASE
 {
 
 
+#ifdef ARDUINO_ARCH_AVR
 // Sensor for temperature potentiometer/dial; 0 is coldest, 255 is hottest.
 // Note that if the callbacks are enabled, the following are implemented:
 //   * Any operation of the pot calls the occupancy/"UI used" callback.
@@ -40,6 +45,7 @@ namespace OTV0P2BASE
 //   * Start BAKE mode when dial turned right up to top.
 //   * Cancel BAKE mode when dial/temperature turned down.
 //   * Force WARM mode when dial/temperature turned up.
+#define SensorTemperaturePot_DEFINED
 class SensorTemperaturePot : public OTV0P2BASE::SimpleTSUint8Sensor
   {
   public:
@@ -62,7 +68,7 @@ class SensorTemperaturePot : public OTV0P2BASE::SimpleTSUint8Sensor
     // Note that some applications may only see a fraction of full scale movement (eg ~25% for DORM1),
     // so allowing for reasonable end stops and tolerances that further constrains this value from above.
     // Note that absolute skew of pot in different devices units may be much larger than unit self-precision.
-    static const uint8_t RN_FRBO = max(2*RN_HYST, 8);
+    static const uint8_t RN_FRBO = fnmax(2*RN_HYST, 8);
 
   private:
     // Raw pot value [0,1023] if extra precision is required.
@@ -75,7 +81,7 @@ class SensorTemperaturePot : public OTV0P2BASE::SimpleTSUint8Sensor
 
     // WARM/FROST and BAKE start/cancel callbacks.
     // If not NULL, are called when the pot is adjusted appropriately.
-    // Typically at most one of these callbacks would be made on any approriate pot adjustment.
+    // Typically at most one of these callbacks would be made on any appropriate pot adjustment.
     void (*warmModeCallback)(bool);
     void (*bakeStartCallback)(bool);
 
@@ -101,7 +107,7 @@ class SensorTemperaturePot : public OTV0P2BASE::SimpleTSUint8Sensor
   public:
     // Initialise raw to distinct/special value and all pointers to NULL.
     SensorTemperaturePot(const uint16_t minExpected_ = 0, const uint16_t maxExpected_ = TEMP_POT_RAW_MAX)
-      : raw(~0U),
+      : raw((uint16_t) ~0U),
         occCallback(NULL), warmModeCallback(NULL), bakeStartCallback(NULL),
         minExpected(minExpected_), maxExpected(maxExpected_),
         loEndStop(_computeLoEndStop(minExpected_, maxExpected_)), hiEndStop(_computeHiEndStop(minExpected_, maxExpected_))
@@ -117,16 +123,16 @@ class SensorTemperaturePot : public OTV0P2BASE::SimpleTSUint8Sensor
     // These read-only values are exposed to assist with any such mapping.
     const uint16_t minExpected, maxExpected;
     // Returns true if the pot output is to be reversed from the natural direction.
-    inline bool isReversed() { return(minExpected > maxExpected); }
+    inline bool isReversed() const { return(minExpected > maxExpected); }
 
     // A (scaled) value below this is deemed to be at the low end stop region (allowing for reversed movement).
     const uint8_t loEndStop;
     // Returns true if at the low end stop: ISR safe.
-    inline bool isAtLoEndStop() { return(value < loEndStop); }
+    inline bool isAtLoEndStop() const { return(value < loEndStop); }
     // A (scaled) value above this is deemed to be at the high end stop region (allowing for reversed movement).
     const uint8_t hiEndStop;
     // Returns true if at the high end stop: ISR safe.
-    inline bool isAtHiEndStop() { return(value > hiEndStop); }
+    inline bool isAtHiEndStop() const { return(value > hiEndStop); }
 
     // Force a read/poll of the temperature pot and return the value sensed [0,255] (cold to hot).
     // Potentially expensive/slow.
@@ -149,6 +155,8 @@ class SensorTemperaturePot : public OTV0P2BASE::SimpleTSUint8Sensor
     // Not thread-safe nor usable within ISRs (Interrupt Service Routines).
     uint16_t getRaw() const { return(raw); }
   };
+
+#endif // ARDUINO_ARCH_AVR
 
 
 }

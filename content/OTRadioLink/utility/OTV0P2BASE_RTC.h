@@ -17,7 +17,12 @@ Author(s) / Copyright (s): Damon Hart-Davis 2013--2015
 */
 
 /*
- Real-time clock support AND RTC-connected watchdog/reset.
+ Real-time clock support and RTC-connected watchdog/reset.
+
+ Wall-clock time is generally in local time [xxLT()],
+ ie incorporating daylight saving where appropriate,
+ so that learned stats and set programmes
+ continue to be in sync with the end users.
  */
 
 #ifndef OTV0P2BASE_RTC_H
@@ -84,15 +89,19 @@ bool restoreRTC();
 // Thread-safe and ISR-safe: returns a consistent atomic snapshot.
 static inline uint_fast8_t getSecondsLT() { return(_secondsLT); } // Assumed atomic.
 
+#ifdef ARDUINO_ARCH_AVR
 // Get local time minutes from RTC [0,59].
 // Relatively slow.
 // Thread-safe and ISR-safe.
 uint_least8_t getMinutesLT();
+#endif
 
+#ifdef ARDUINO_ARCH_AVR
 // Get local time hours from RTC [0,23].
 // Relatively slow.
 // Thread-safe and ISR-safe.
 uint_least8_t getHoursLT();
+#endif
 
 // Get minutes since midnight local time [0,1439].
 // Useful to fetch time atomically for scheduling purposes.
@@ -104,10 +113,22 @@ uint_least16_t getMinutesSinceMidnightLT();
 // Thread-safe and ISR-safe.
 uint_least16_t getDaysSince1999LT();
 
+#ifdef ARDUINO_ARCH_AVR
 // Get previous hour in current local time, wrapping round from 0 to 23.
 uint_least8_t getPrevHourLT();
 // Get next hour in current local time, wrapping round from 23 back to 0.
 uint_least8_t getNextHourLT();
+#endif
+
+
+// Simple short-term (<60s) elapsed-time computations for wall-clock seconds.
+// Will give unhelpful results if called more than 60s after the original sample.
+inline uint_fast8_t getElapsedSecondsLT(const uint_fast8_t startSecondsLT)
+  {
+  const uint_fast8_t now = getSecondsLT();
+  if(now >= startSecondsLT) { return(now - startSecondsLT); }
+  return(60 + now - startSecondsLT);
+  }
 
 
 // Set time as hours [0,23] and minutes [0,59].

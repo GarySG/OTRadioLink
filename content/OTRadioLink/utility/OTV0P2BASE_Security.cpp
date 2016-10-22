@@ -20,10 +20,13 @@ Author(s) / Copyright (s): Damon Hart-Davis 2013--2016
  Basic security support.
  */
 
-
+#ifdef ARDUINO_ARCH_AVR
 #include <util/atomic.h>
+#endif
 
+#ifdef ARDUINO
 #include <Arduino.h>
+#endif
 
 #include "OTV0P2BASE_Security.h"
 
@@ -39,8 +42,12 @@ namespace OTV0P2BASE
 // Get the current basic stats transmission level (for data outbound from this node).
 // May not exactly match enumerated levels; use inequalities.
 // Not thread-/ISR- safe.
+#ifdef V0P2BASE_EE_START_STATS_TX_ENABLE
 stats_TX_level getStatsTXLevel() { return((stats_TX_level)eeprom_read_byte((uint8_t *)V0P2BASE_EE_START_STATS_TX_ENABLE)); }
+#endif
 
+
+#ifdef ARDUINO_ARCH_AVR
 
 // Coerce any EEPROM-based node OpenTRV ID bytes to valid values if unset (0xff) or if forced,
 // by filling with valid values (0x80--0xfe) from decent entropy gathered on the fly.
@@ -89,13 +96,13 @@ bool ensureIDCreated(const bool force)
   }
 
 
-
 /**
  * @brief   Sets the primary building 16 byte secret key in EEPROM.
  * @param   newKey    A pointer to the first byte of a 16 byte array containing the new key.
  *                    On passing a NULL pointer, the stored key will be cleared.
  *                    NOTE: The key pointed to by newKey must be stored as binary, NOT as text.
  * @retval  true if key is cleared successfully or new key is set, else false.
+ * @fixme   TODO-907: THIS OR THE FUNCTION THAT CALLS IT SHOULD BE RESETTING + INITING THE MESSAGE COUNTER!!!
  */
 // Functions for setting a 16 byte primary building secret key, which must not be all-1s.
 bool setPrimaryBuilding16ByteSecretKey(const uint8_t *const newKey) // <-- this should be 16-byte binary, NOT text!
@@ -147,6 +154,7 @@ bool getPrimaryBuilding16ByteSecretKey(uint8_t *key)
   return(isOK);
   }
 
+
 /**
  * @brief Clears all existing node IDs.
  */
@@ -193,6 +201,7 @@ bool getNodeAssociation(const uint8_t index, uint8_t *const nodeID)
 
 /**
  * @brief   Checks through stored node IDs and adds a new one if there is space.
+ *          The remainder of the node association entry (e.g. message counter) is erased.
  * @param   pointer to new 8 byte node ID
  * @retval  index of this new association, or -1 if no space
  */
@@ -267,6 +276,8 @@ int8_t getNextMatchingNodeID(const uint8_t _index, const uint8_t *prefix, const 
     // No match has been found.
     return(-1);
 }
+
+#endif // ARDUINO_ARCH_AVR
 
 
 }

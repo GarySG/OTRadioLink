@@ -19,10 +19,15 @@ Author(s) / Copyright (s): Damon Hart-Davis 2015--2016
 /*
  * V0p2-specific implementation of secure frame code,
  * using EEPROM for non-volatile storage of (eg) message counters.
+ *
+ * V0p2/AVR only.
  */
 
+#ifdef ARDUINO_ARCH_AVR
 #include <util/atomic.h>
 #include <util/crc16.h>
+#endif
+
 #include <string.h>
 
 #include "OTRadioLink_SecureableFrameType.h"
@@ -30,10 +35,13 @@ Author(s) / Copyright (s): Damon Hart-Davis 2015--2016
 
 #include "OTV0P2BASE_EEPROM.h"
 
+#include "OTV0p2Base.h"
 
 namespace OTRadioLink
     {
 
+
+#ifdef SimpleSecureFrame32or0BodyTXV0p2_DEFINED
 
 // Factory method to get singleton TX instance.
 SimpleSecureFrame32or0BodyTXV0p2 &SimpleSecureFrame32or0BodyTXV0p2::getInstance()
@@ -101,7 +109,13 @@ static bool saveRaw3BytePersistentTXRestartCounterToEEPROM(const uint8_t *const 
 bool SimpleSecureFrame32or0BodyTXV0p2::resetRaw3BytePersistentTXRestartCounterInEEPROM(const bool allZeros)
     {
     // Clear the primary building key.
-    if(!OTV0P2BASE::setPrimaryBuilding16ByteSecretKey(NULL)) { return(false); }
+    /**
+     * @note    This was intended as a way of insuring that a fresh key must be programmed
+     *          when the counter overflows, even if the app layer is wrongly implemented.
+     *          As part of TODO-907, it was discovered that it is causing freshly programmed
+     *          devices to delete their keys.
+     */
+//    if(!OTV0P2BASE::setPrimaryBuilding16ByteSecretKey(NULL)) { return(false); } ///@note commented as part of TODO-907 fix
     // Reset the counter.
     if(allZeros)
         {
@@ -645,6 +659,8 @@ bool SimpleSecureFrame32or0BodyTXV0p2SuppliedID::getTXID(uint8_t *const idOut)
     // Dynamically fetch/compute ID.
     return(getID(idOut));
     }
+
+#endif // SimpleSecureFrame32or0BodyTXV0p2_DEFINED
 
 
     }

@@ -9,10 +9,19 @@ or release/freeze points.
 
 
 pending:
+    DHD20161020: TODO-1026: pushd thresholds for movement out when using wide deadband
+    DHD20161015: TODO-970: Created OTRadValve_Parameters.h.
+    DHD20161002: TODO-621: tuning 'door opened' algorithm to fit some observed data.
+
+
+
+20160505:
+    freezepoint name: V1.1 (as part of OTRadioLink)
+    branch name: HEAD
+    Deployed where: Production
+    Changes since last freezepoint (developer/mgr initials and brief description):
+    Previous significant freezepoint: V1.0
     DHD20160610: TODO-884: trying to provide 'motor good' feedback earlier.
-
-
-
 
 20160331:
     freezepoint name: V1.0 (as part of OTRadioLink)

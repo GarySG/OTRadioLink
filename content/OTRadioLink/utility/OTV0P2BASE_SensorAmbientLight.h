@@ -18,6 +18,8 @@ Author(s) / Copyright (s): Damon Hart-Davis 2013--2016
 
 /*
  Ambient light sensor with occupancy detection.
+
+ Specific to V0p2/AVR for now.
  */
 
 #ifndef OTV0P2BASE_SENSORAMBLIGHT_H
@@ -25,12 +27,14 @@ Author(s) / Copyright (s): Damon Hart-Davis 2013--2016
 
 #include "OTV0P2BASE_Util.h"
 #include "OTV0P2BASE_Sensor.h"
+#include "OTV0P2BASE_SensorAmbientLightOccupancy.h"
 
 
 namespace OTV0P2BASE
 {
 
 
+#ifdef ARDUINO_ARCH_AVR
 // Sense (usually non-linearly) over full likely internal ambient lighting range of a (UK) home,
 // down to levels too dark to be active in (and at which heating could be set back for example).
 // This suggests a full scale of at least 50--100 lux, maybe as high as 300 lux, eg see:
@@ -40,6 +44,7 @@ namespace OTV0P2BASE
 // http://www.vishay.com/docs/84154/appnotesensors.pdf
 
 // Sensor for ambient light level; 0 is dark, 255 is bright.
+#define SensorAmbientLight_DEFINED
 class SensorAmbientLight : public SimpleTSUint8Sensor
   {
   public:
@@ -91,9 +96,15 @@ class SensorAmbientLight : public SimpleTSUint8Sensor
     //   * sensitive  if true be more sensitive to possible occupancy changes, else less so.
     void _recomputeThresholds(bool sensitive = true);
 
+    // Embedded occupancy detection object.
+    // May be moved out of here to stand alone,
+    // or could be parameterised at compile time with a template,
+    // or at run time by being constructed with a pointer to the base type.
+    SensorAmbientLightOccupancyDetectorSimple occupancyDetector;
+
   public:
     SensorAmbientLight(const uint8_t defaultLightThreshold_ = DEFAULT_LIGHT_THRESHOLD)
-      : rawValue(~0U), // Initial value is distinct.
+      : rawValue((uint16_t) ~0U), // Initial value is distinct.
         isRoomLitFlag(false), darkTicks(0),
         recentMin(~0), recentMax(~0),
         defaultLightThreshold(fnmin((uint8_t)254, fnmax((uint8_t)1, defaultLightThreshold_))),
@@ -148,9 +159,22 @@ class SensorAmbientLight : public SimpleTSUint8Sensor
     // Set recent min and max ambient light levels from recent stats, to allow auto adjustment to dark; ~0/0xff means no min/max available.
     // Short term stats are typically over the last day,
     // longer term typically over the last week or so (eg rolling exponential decays).
-    // Call regularly, roughly hourly, to drive other internal time-dependent adaptation.
+    // Call regularly, at least roughly hourly, to drive other internal time-dependent adaptation.
     //   * sensitive  if true be more sensitive to possible occupancy changes, else less so.
+    // DEPRECATED: use setTypMinMax() with the extra typical/mean parameter.
     void setMinMax(uint8_t recentMinimumOrFF, uint8_t recentMaximumOrFF,
+                   uint8_t longerTermMinimumOrFF = 0xff, uint8_t longerTermMaximumOrFF = 0xff,
+                   bool sensitive = true)
+        { setTypMinMax(0xff, recentMinimumOrFF, recentMaximumOrFF, longerTermMinimumOrFF,longerTermMaximumOrFF, sensitive); }
+
+    // Set recent min and max ambient light levels from recent stats, to allow auto adjustment to dark; ~0/0xff means no min/max available.
+    // Short term stats are typically over the last day,
+    // longer term typically over the last week or so (eg rolling exponential decays).
+    // Call regularly, at least roughly hourly, to drive other internal time-dependent adaptation.
+    //   * meanNowOrFF  typical/mean light level around this time each 24h; 0xff if not known.
+    //   * sensitive  if true be more sensitive to possible occupancy changes, else less so.
+    void setTypMinMax(uint8_t meanNowOrFF,
+                   uint8_t recentMinimumOrFF, uint8_t recentMaximumOrFF,
                    uint8_t longerTermMinimumOrFF = 0xff, uint8_t longerTermMaximumOrFF = 0xff,
                    bool sensitive = true);
 
@@ -161,11 +185,12 @@ class SensorAmbientLight : public SimpleTSUint8Sensor
 //      { rawValue = newRawValue; value = newRawValue >> 2; isRoomLitFlag = newRoomLitFlag; darkTicks = newDarkTicks; }
 //#endif
   };
+#endif // ARDUINO_ARCH_AVR
 
 
 // Dummy placeholder AmbientLight sensor class with always-false dummy static status methods.
 // These methods should be fully optimised away by the compiler in many/most cases.
-// Can be to reduce code complexity, by eliminating some need for preprocessing.
+// Can be to reduce code complexity, by eliminating some need for pre-processing.
 class DummySensorAmbientLight
   {
   public:

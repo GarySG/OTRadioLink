@@ -14,6 +14,7 @@ specific language governing permissions and limitations
 under the Licence.
 
 Author(s) / Copyright (s): Damon Hart-Davis 2015--2016
+                            Deniz Erbilgin 2016
 */
 
 #ifndef ARDUINO_LIB_OTRADVALVE_H
@@ -24,6 +25,9 @@ Author(s) / Copyright (s): Damon Hart-Davis 2015--2016
 
 // Radiator valve support, abstract and common implementations.
 
+// OpenTRV radiator valve basic parameters..
+#include "utility/OTRadValve_Parameters.h"
+
 // Abstract/base interface for basic (thermostatic) radiator valves.
 #include "utility/OTRadValve_AbstractRadValve.h"
 
@@ -33,10 +37,22 @@ Author(s) / Copyright (s): Damon Hart-Davis 2015--2016
 // Driver for FHT8V wireless valve actuator (and FS20 protocol encode/decode).
 #include "utility/OTRadValve_FHT8VRadValve.h"
 
-// Driver for DORM1/REV7 direct motor drive.
+// Hardware-independent logic for direct proportional valve motor drive..
+#include "utility/OTRadValve_CurrentSenseValveMotorDirect.h"
+
+// Base for TRV1 (DORM1/REV7) and TRV2 direct valve motor drive.
+#include "utility/OTRadValve_ValveMotorBase.h"
+
+// Driver for DORM1/REV7 direct valve motor drive.
 #include "utility/OTRadValve_ValveMotorDirectV1.h"
+
+// Driver for DRV8850 valve motor drive.
+#include "utility/OTRadValve_ValveMotorDRV8850.h"
 
 // Driver for boiler.
 #include "utility/OTRadValve_BoilerDriver.h"
+
+// Test motor driver
+#include "utility/OTRadValve_TestValve.h"
 
 #endif

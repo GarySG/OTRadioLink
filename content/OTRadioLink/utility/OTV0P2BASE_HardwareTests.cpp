@@ -34,7 +34,10 @@ Author(s) / Copyright (s): Damon Hart-Davis 2016
 #ifndef OTV0P2BASE_HARDWARETESTS_H
 #define OTV0P2BASE_HARDWARETESTS_H
 
+#ifdef ARDUINO_ARCH_AVR
 #include "util/atomic.h"
+#endif
+
 #include "OTV0P2BASE_Entropy.h"
 #include "OTV0P2BASE_Sleep.h"
 
@@ -47,6 +50,7 @@ namespace HWTEST
 {
 
 
+#ifdef ARDUINO_ARCH_AVR
 // Returns true if the 32768Hz low-frequency async crystal oscillator appears to be running.
 // This means the the Timer 2 clock needs to be running
 // and have an acceptable frequency compared to the CPU clock (1MHz).
@@ -75,14 +79,16 @@ bool check32768HzOsc()
         // Ensure lower bound of ~3s until loop finishes.
         OTV0P2BASE::nap(WDTO_15MS);
         }
-#endif
 
 #if 0 && defined(DEBUG)
     DEBUG_SERIAL_PRINTLN_FLASHSTRING("32768Hz clock may not be running!");
 #endif
     return(false); // FAIL // panic(F("Xtal")); // Async clock not running.
     }
+#endif
+#endif
 
+#ifdef ARDUINO_ARCH_AVR
 // Returns true if the 32768Hz low-frequency async crystal oscillator appears to be running and sane.
 // Performs an extended test that the CPU (RC) and crystal frequencies are in a sensible ratio.
 // This means the the Timer 2 clock needs to be running
@@ -133,6 +139,63 @@ bool check32768HzOscExtended()
 
     return(true); // Success!
     }
+#endif // ARDUINO_ARCH_AVR
 
+#ifdef ARDUINO_ARCH_AVR
 
-} }
+/**
+ * @brief	Calibrate the internal RC oscillator against and external crystal oscillator or resonator.
+ * @param   todo do we want settable stuff, e.g. ext osc rate, internal osc rate, etc?
+ * @retval  True on calibration success.
+ */
+bool calibrateInternalOscWithExtOsc()
+{
+    // todo these should probably go somewhere else but not sure where.
+	const constexpr uint8_t maxTries = 128;  // Maximum number of values to attempt.
+	const constexpr uint8_t initOscCal = 0;  // Initial oscillator calibration value to start from.
+	// TCNT2 overflows every 2 seconds. One tick is 2000/256 = 7.815 ms, or 7815 clock cycles at 1 MHz.
+	// Minimum number of cycles we want per count is (7815*1.1)/255 = 34, to give some play in case the clock is too fast.
+	const constexpr uint16_t cyclesPerTick = 7815;
+	const constexpr uint8_t innerLoopTime = 36;  // the number of cycles the inner loop takes to execute.
+	const constexpr uint8_t targetCount = cyclesPerTick/innerLoopTime;  // The number of counts we are aiming for.
+
+    // Check that the slow clock appears to be running.
+    if(!check32768HzOsc()) { return(false); }
+
+    // Set initial calibration value and wait to settle.
+    OSCCAL = initOscCal; // todo think about what happens if oscillator has previously been calibrated! unlikely to have wandered too much.
+    _delay_x4cycles(2); // > 8 us. max oscillator settling time is 5 us.
+
+    // Calibration routine
+    for(uint8_t i = 0; i < maxTries; i++)
+	{
+    	uint8_t count = 0;
+
+        ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+		{
+			// Wait for edge on xtal counter edge.
+			const uint8_t t0 = TCNT2;
+			const uint8_t t1 = TCNT2 + 1;
+			while(t0 == TCNT2) {}
+			// Start counting cycles.
+			// todo Count the number of cycles this loop takes! Assuming 40 for now.
+			do {
+				count++; // 2 cycles?
+				// 8*4 = 32 cycles per count. fixme (DE20161021) I don't think this takes register setup into account.
+				_delay_x4cycles(8);
+            // Repeat loop until TCNT2 increments.
+			} while (TCNT2 == t1); // 2 cycles?
+		}
+        // Set new calibration value.
+        if(count > targetCount) OSCCAL--;
+        else if(count < targetCount) OSCCAL++;
+        else return true;
+        // Wait for oscillator to settle.
+        _delay_x4cycles(2);
+
+	}
+}
+#endif // ARDUINO_ARCH_AVR
+
+}
+}

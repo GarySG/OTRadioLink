@@ -24,7 +24,9 @@ Author(s) / Copyright (s): Damon Hart-Davis 2015
 #ifndef OTV0P2BASE_FASTDIGITALIO_H
 #define OTV0P2BASE_FASTDIGITALIO_H
 
+#ifdef ARDUINO
 #include <Arduino.h>
+#endif
 
 namespace OTV0P2BASE
 {
@@ -34,6 +36,7 @@ namespace OTV0P2BASE
 // and this saves time and energy on (critical) paths polling I/O.
 // Does not do any error checking: beware.
 // Only really intended for ATmega328P.
+#ifdef ARDUINO_ARCH_AVR
 #ifdef __AVR_ATmega328P__
 /* Register: PIND for 0--7, PINB for 8--13, 14--19 PINC (ADC/AI). */
 /* Bit: 0--7 as-is, 8--13 subtract 8, else subtract 14. */
@@ -71,6 +74,7 @@ namespace OTV0P2BASE
 /* Register: PORTD for 0--7, PORTB for 8--13, (eg 13 is PORTB), 14--19 PINC (ADC/AI). */
 /* Bit: 0--7 as-is, 8--13 subtract 8, else subtract 14. */
 // Handle quickly constant-value pins that we know about; fall back to generic run-time routine for rest.
+// NOTE: Falls back to digitalWrite if 'value' is not a compile time constant.
 #define fastDigitalWrite(pin, value) do { \
     if(__builtin_constant_p((pin)) && (__builtin_constant_p(value) && ((pin) >= 0) && ((pin) < 8))) { bitWrite(PORTD, (pin), (value)); } \
     else if(__builtin_constant_p((pin)) && (__builtin_constant_p((value)) && ((pin) >= 8) && ((pin) < 14))) { bitWrite(PORTB, max((pin)-8,0), (value)); } \
@@ -79,6 +83,7 @@ namespace OTV0P2BASE
 #else
 #define fastDigitalRead(pin) digitalRead((pin)) // Don't know about other AVRs.
 #define fastDigitalWrite(pin, value) digitalWrite((pin), (value)) // Don't know about other AVRs.
+#endif
 #endif
 
 }

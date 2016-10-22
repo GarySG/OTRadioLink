@@ -17,7 +17,11 @@ Author(s) / Copyright (s): Deniz Erbilgin 2016
                            Damon Hart-Davis 2016
 */
 
-// CLI support routines
+/*
+ * CLI support routines
+ *
+ * V0p2/AVR only for now.
+ */
 
 // NOTE: some CLI routines may live alongside the devices they support, not here.
 
@@ -35,6 +39,8 @@ Author(s) / Copyright (s): Deniz Erbilgin 2016
 namespace OTV0P2BASE {
 namespace CLI {
 
+
+#ifdef ARDUINO_ARCH_AVR
 
 // Prints warning to serial (that must be up and running) that invalid (CLI) input has been ignored.
 // Probably should not be inlined, to avoid creating duplicate strings in Flash.
@@ -403,6 +409,7 @@ bool NodeID::doCommand(char *const buf, const uint8_t buflen)
 // Clearing a key conditionally resets the primary TX message counter to avoid IV reuse
 // if a non-NULL callback has been provided.
 // Note that this may take significant time and will mess with the CPU clock.
+// TODO-907:
 bool SetSecretKey::doCommand(char *const buf, const uint8_t buflen)
     {
     char *last; // Used by strtok_r().
@@ -521,6 +528,8 @@ bool ZapStats::doCommand(char *const buf, const uint8_t buflen)
       { Serial.println(F("Not finished.")); }
     return(false); // May be slow; avoid showing stats line which will in any case be unchanged.
     }
+
+#endif // ARDUINO_ARCH_AVR
 
 
 } }

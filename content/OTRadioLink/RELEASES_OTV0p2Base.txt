@@ -9,12 +9,29 @@ or release/freeze points.
 
 
 pending:
+    DHD20161011: Created w/ unit tests SensorAmbientLightOccupancyDetectorSimple.
+    DHD20160911: REV1 config CONFIG_Trial2013Winter_Round1_SECURE_SENSOR 
+    DHD20160911: REV1 config CONFIG_Trial2013Winter_Round2_SECURE_STATSHUB 
+    DE20160510:  OTSoftSerial now runs at 9600 baud.
+    DE20160812:  Fixed boiler hub relay code.
+    DE20160812:  Fixed clashes with Arduino AVR Boards v1.6.12
+
+
+
+
+
+
+20160505:
+    freezepoint name: V1.1 (as part of OTRadioLink)
+    branch name: HEAD
+    Deployed where: Production
+    Changes since last freezepoint (developer/mgr initials and brief description):
+    Previous significant freezepoint: V1.0
     JP20160406: fix to correctly set the precision of the DS18B20 sensor.
-    DHD20160412: TODO-887: RTC-based low-power watchdog detecting overruns/jams.
+    DHD20160412: TODO-887: RTC-based low-power watchdog for detecting overruns/jams.
     DE20160427:  Initial synchronous version of OTSoftSerial2.
-
-
-
+    DE20160523:  Working OTSoftSerial2.
+    DE20160523:  Working OTSoftSerialAsync prototype (does not run at 9600 baud).
 
 20160331:
     freezepoint name: V1.0 (as part of OTRadioLink)

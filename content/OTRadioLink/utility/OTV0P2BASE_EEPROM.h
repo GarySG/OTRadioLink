@@ -21,17 +21,32 @@ Author(s) / Copyright (s): Damon Hart-Davis 2013--2016
  EEPROM space allocation and utilities including some of the simple rolling stats management.
 
  NOTE: NO EEPROM ACCESS SHOULD HAPPEN FROM ANY ISR CODE ELSE VARIOUS FAILURE MODES ARE POSSIBLE
+
+ Mainly V0p2/AVR for now.
  */
 
 #ifndef OTV0P2BASE_EEPROM_H
 #define OTV0P2BASE_EEPROM_H
 
+#include <stdint.h>
+
+#ifdef ARDUINO_ARCH_AVR
 #include <avr/eeprom.h>
+#endif
 
 
 namespace OTV0P2BASE
 {
 
+
+// 'Unset'/invalid stats values for byte (eg raw EEPROM byte)
+// and 2-byte signed int (eg after decompression).
+// These are to be used where erased non-volatile (eg EEPROM) values are 0xff.
+static const uint8_t STATS_UNSET_BYTE = 0xff;
+static const int16_t STATS_UNSET_INT = 0x7fff;
+
+
+#ifdef ARDUINO_ARCH_AVR
 
 // ATmega328P has 1kByte of EEPROM, with an underlying page size (datasheet section 27.5) of 4 bytes for wear purposes.
 // Endurance may be per page (or per bit-change), rather than per byte, eg: http://www.mail-archive.com/avr-libc-dev@nongnu.org/msg02456.html
@@ -169,9 +184,11 @@ static const uint8_t V0P2BASE_EE_LEN_RAW_INSPECTABLE = 32;
 // Highest EEPROM address allowed for raw inspect/set.
 // Items beyond this may be particularly security-sensitive, eg secret keys.
 static const intptr_t V0P2BASE_EE_END_RAW_INSPECTABLE = V0P2BASE_EE_START_RAW_INSPECTABLE + V0P2BASE_EE_LEN_RAW_INSPECTABLE - 1;
-// Lockout time in hours before energy-saving setbacks are enabled (if not 0), stored inverted.
+// Lockout time before energy-saving setbacks are enabled (if not 0), stored inverted.
+// For release V1.0.4 2016/03/15 the units were hours, allowing for ~10 days max lockout.
+// Subsequent use prefers days, allowing more than enough to cover any part of a heating season.
 // Stored inverted so that a default erased (0xff) value will be seen as 0, so no lockout and thus normal behaviour.
-static const intptr_t V0P2BASE_EE_START_SETBACK_LOCKOUT_COUNTDOWN_H_INV = 0 + V0P2BASE_EE_START_RAW_INSPECTABLE;
+static const intptr_t V0P2BASE_EE_START_SETBACK_LOCKOUT_COUNTDOWN_D_INV = 0 + V0P2BASE_EE_START_RAW_INSPECTABLE;
 
 
 // TX message counter (most-significant) persistent reboot/restart 3 bytes.  (TODO-728)
@@ -269,11 +286,6 @@ static const uint8_t V0P2BASE_EE_NODE_ASSOCIATIONS_MAX_SETS = 8;
 // INCLUSIVE END OF NODE ASSOCIATIONS AREA: must point to last byte used.
 static const intptr_t V0P2BASE_EE_END_NODE_ASSOCIATIONS = ((V0P2BASE_EE_NODE_ASSOCIATIONS_MAX_SETS * V0P2BASE_EE_NODE_ASSOCIATIONS_SET_SIZE)-1);
 
-
-// 'Unset'/invalid stats values for byte (eg raw EEPROM byte) and 2-byte signed int (eg after decompression).
-static const uint8_t STATS_UNSET_BYTE = 0xff;
-static const int16_t STATS_UNSET_INT = 0x7fff;
-
 // Special values indicating the current hour and the next hour, for stats.
 static const uint8_t STATS_SPECIAL_HOUR_CURRENT_HOUR = ~0 - 1;
 static const uint8_t STATS_SPECIAL_HOUR_NEXT_HOUR = ~0;
@@ -286,8 +298,8 @@ bool zapStats(uint16_t maxBytesToErase = 0);
 
 // Get raw stats value for specified hour [0,23]/current/next from stats set N from non-volatile (EEPROM) store.
 // A value of STATS_UNSET_BYTE (0xff (255)) means unset (or out of range); other values depend on which stats set is being used.
-//   * hour  hour of day to use, or ~0 for current hour, or >23 for next hour.
-uint8_t getByHourStat(uint8_t statsSet, uint8_t hour);
+//   * hour  hour of day to use, or ~0/0xff for current hour (default), or >23 for next hour.
+uint8_t getByHourStat(uint8_t statsSet, uint8_t hour = 0xff);
 
 // Get minimum sample from given stats set ignoring all unset samples; STATS_UNSET_BYTE if all samples are unset.
 uint8_t getMinByHourStat(uint8_t statsSet);
@@ -305,6 +317,9 @@ bool inOutlierQuartile(bool inTop, uint8_t statsSet, uint8_t hour = STATS_SPECIA
 // Compute the number of stats samples in specified set less than the specified value; returns -1 for invalid stats set.
 // (With the UNSET value specified, count will be of all samples that have been set, ie are not unset.)
 int8_t countStatSamplesBelow(uint8_t statsSet, uint8_t value);
+
+#endif // ARDUINO_ARCH_AVR
+
 
 // Range-compress an signed int 16ths-Celsius temperature to a unsigned single-byte value < 0xff.
 // This preserves at least the first bit after the binary point for all values,
