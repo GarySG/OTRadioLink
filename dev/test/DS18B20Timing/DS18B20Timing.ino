@@ -27,6 +27,7 @@ OTV0P2BASE::MinimalOneWire<> minOW;
 
 static const uint8_t setPrecision(const uint8_t address[8], const uint8_t precision)
 {
+  // ERROR: uint8_t write = ((precision - 9) << 6) | 0x1f;
   uint8_t write = ((precision - 9) << 5) | 0x1f;
   OTV0P2BASE::serialPrintAndFlush(">");
   OTV0P2BASE::serialPrintAndFlush(write, BIN);
@@ -55,11 +56,6 @@ static const uint8_t setPrecision(const uint8_t address[8], const uint8_t precis
 
 static int16_t readTemp(const uint8_t address[8])
 {
-  minOW.reset();
-  minOW.select(address);
-  while (minOW.read_bit() == 0) {
-  }
-
   minOW.reset();
   minOW.select(address);
   minOW.write(CMD_READ_SCRATCH);
@@ -138,6 +134,9 @@ void loop()
   minOW.select(firstAddress);
   minOW.write(CMD_START_CONVO); // Start conversion without parasite power.
 
+  while (minOW.read_bit() == 0) {
+  }
+
   int16_t temp = readTemp(firstAddress);
   unsigned long delay = millis() - time;
 
@@ -188,7 +187,7 @@ void loop()
     time = millis();
   }
 
-  // Increase the presision
+  // Increase the precision
   if (++precision > OTV0P2BASE::TemperatureC16_DS18B20::MAX_PRECISION) {
     precision = OTV0P2BASE::TemperatureC16_DS18B20::MIN_PRECISION;
   }

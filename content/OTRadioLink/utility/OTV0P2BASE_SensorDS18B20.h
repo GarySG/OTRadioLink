@@ -15,6 +15,7 @@ under the Licence.
 
 Author(s) / Copyright (s): Damon Hart-Davis 2014--2016
                            Jeremy Poulter 2016
+                           Gary Gladman 2016
 */
 
 /*
@@ -51,6 +52,10 @@ namespace OTV0P2BASE
 // Provides temperature as a signed int value with 0C == 0 at all precisions.
 class TemperatureC16_DS18B20 : public TemperatureC16Base
   {
+  public:
+    // Maximum number of corrected sensors.
+    static const uint8_t MAX_SENSORS = 10U;
+
   private:
     // Reference to minimal OneWire support instance for appropriate GPIO.
     OTV0P2BASE::MinimalOneWireBase &minOW;
@@ -62,7 +67,10 @@ class TemperatureC16_DS18B20 : public TemperatureC16Base
     const uint8_t precision;
 
     // The number of sensors found on the bus
-    uint8_t sensorCount;
+    uint8_t numberSensors;
+
+    // Per sensor error correction.
+    int8_t correction[MAX_SENSORS];
 
     // Initialise the device (if any) before first use.
     // Returns true iff successful.
@@ -72,19 +80,19 @@ class TemperatureC16_DS18B20 : public TemperatureC16Base
 
   public:
     // Minimum supported precision, in bits, corresponding to 1/2 C resolution.
-    static const uint8_t MIN_PRECISION = 9;
+    static const uint8_t MIN_PRECISION = 9U;
     // Maximum supported precision, in bits, corresponding to 1/16 C resolution.
-    static const uint8_t MAX_PRECISION = 12;
+    static const uint8_t MAX_PRECISION = 12U;
     // Default precision; defaults to minimum for speed.
     static const uint8_t DEFAULT_PRECISION = MIN_PRECISION;
 
     // Returns number of useful binary digits after the binary point.
     // 8 less than total precision for DS18B20.
-    virtual int8_t getBitsAfterPoint() const { return(precision - 8); }
+    virtual int8_t getBitsAfterPoint() const { return(precision - 8U); }
 
     // Returns true if this sensor is definitely unavailable or behaving incorrectly.
     // This is after an attempt to initialise has not found a DS18B20 on the bus.
-    virtual bool isUnavailable() const { return(initialised && (0 == sensorCount)); }
+    virtual bool isUnavailable() const { return(initialised && 0U == numberSensors); }
 
     // Create instance with given OneWire connection, bus ordinal and precision.
     // No two instances should attempt to target the same DS18B20,
@@ -92,36 +100,62 @@ class TemperatureC16_DS18B20 : public TemperatureC16Base
     // Precision defaults to minimum (9 bits, 0.5C resolution) for speed.
     TemperatureC16_DS18B20(OTV0P2BASE::MinimalOneWireBase &ow, uint8_t _precision = DEFAULT_PRECISION)
       : minOW(ow), initialised(false), precision(constrain(_precision, MIN_PRECISION, MAX_PRECISION))
-      { }
+#if defined(DS18B20_STAT_CORRECTION)
+      { memset(correction, 2, sizeof(correction)); }
+#else
+      { memset(correction, 0, sizeof(correction)); }
+#endif
 
     // Get current precision in bits [9,12]; 9 gives 1/2C resolution, 12 gives 1/16C resolution.
     uint8_t getPrecisionBits() const { return(precision); }
 
     // return the number of DS18B20 sensors on the bus
-    uint8_t getSensorCount();
+    uint8_t getNumberSensors();
 
-    // Force a read/poll of temperature and return the value sensed in nominal units of 1/16 C.
+    // Force capture and extraction of temperature from the single DS18B20 sensor.
+    // Return the value sensed in nominal units of 1/16 C.
     // At sub-maximum precision lsbits will be zero or undefined.
-    // Expensive/slow.
+    // Expensive/slow NOTE: capture and extraction can be separated
     // Not thread-safe nor usable within ISRs (Interrupt Service Routines).
-    // When multiple DS18B20 are connected this will read the 'first' one, use ReadMultiple to read the 
-    // values from more than the just the first
     virtual int16_t read();
 
-    // Force a read/poll of temperature from multiple DS18B20 sensors; returns number of values read.
-    // The value sensed, in nominal units of 1/16 C,
-    // is written to the array of uint16_t (with count elements) pointed to by values.
-    // The values are written in the order they are found on the One-Wire bus.
-    // index specifies the sensor to start reading at 0 being the first (and the default).
-    // This can be used to read more sensors
-    // than elements in the values array.
-    // The return is the number of values read.
-    // At sub-maximum precision lsbits will be zero or undefined.
-    // Expensive/slow.
+    // Force a capture of temperature from potentially multiple DS18B20 sensors.
+    // The return indicates whether 0 or more sensors are capturing.
     // Not thread-safe nor usable within ISRs (Interrupt Service Routines).
-    uint8_t readMultiple(int16_t *values, uint8_t count, uint8_t index = 0);
+    uint16_t capture(void);
+
+    // Extract temperature from multiple DS18B20 sensors providing a capture has been initiated.
+    // The value sensed, in nominal units of 1/16 C, is written to the array of uint16_t (with count elements)
+    // pointed to by values. The values are written in the order they are found on the One-Wire bus.
+    // index specifies the sensor to start reading at 0 being the first. This can be used to read more sensors
+    // than elements in the values array
+    // The return is the number of values read
+    // At sub-maximum precision lsbits will be zero or undefined.
+    // Expensive/slow - NOTE: once capture capture is initiated other activities can be interleaved prior to extraction
+    // Not thread-safe nor usable within ISRs (Interrupt Service Routines).
+    uint16_t extractMultiple(int16_t *values, int count, int index = 0) const;
+
+    // Force capture and extraction of temperature from multiple DS18B20 sensors.
+    // The value sensed, in nominal units of 1/16 C, is written to the array of uint16_t (with count elements)
+    // pointed to by values. The values are written in the order they are found on the One-Wire bus.
+    // index specifies the sensor to start reading at 0 being the first. This can be used to read more sensors
+    // than elements in the values array
+    // The return is the number of values read
+    // At sub-maximum precision lsbits will be zero or undefined.
+    // Expensive/slow NOTE: capture and extraction can be separated
+    // Not thread-safe nor usable within ISRs (Interrupt Service Routines).
+    uint16_t readMultiple(int16_t *values, int count, int index = 0);
+
+    // Calculate the per sensor correction for a number of sensors.
+    // Assumes n co-located temperature sensors at ambient prior to relocating and setting to work.
+    // Expected to be used once during system setup.
+    // Not thread-safe nor usable within ISRs (Interrupt Service Routines).
+    void correct(int8_t * const corr);
+
+    // Set the per sensor correction for a number of sensors.
+    // Not thread-safe nor usable within ISRs (Interrupt Service Routines).
+    void setCorrect(const int8_t * const corr);
+
   };
-
-
 }
 #endif

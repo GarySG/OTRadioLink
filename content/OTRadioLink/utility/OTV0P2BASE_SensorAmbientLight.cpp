@@ -30,6 +30,7 @@ Author(s) / Copyright (s): Damon Hart-Davis 2013--2016
 #include "OTV0P2BASE_Entropy.h"
 #include "OTV0P2BASE_PowerManagement.h"
 #include "OTV0P2BASE_Sleep.h"
+#include "OTV0P2BASE_Serial_IO.h"   // for DEBUG_SERIAL
 
 
 namespace OTV0P2BASE
@@ -138,25 +139,26 @@ uint8_t SensorAmbientLight::read()
 
   // If a callback is set
   // then treat a sharp brightening as a possible/weak indication of occupancy, eg light flicked on.
-  if((NULL != possOccCallback) && (newValue > oldValue))
+  const int16_t delta = newValue - oldValue;
+  if((NULL != possOccCallback) && (delta > 0))
     {
+#if 1 //&& defined(DEBUG)
+V0P2BASE_DEBUG_SERIAL_PRINT_FLASHSTRING("  UP: ambient light rise/upDelta/newval/dt/lt: ");
+V0P2BASE_DEBUG_SERIAL_PRINT(delta);
+V0P2BASE_DEBUG_SERIAL_PRINT(' ');
+V0P2BASE_DEBUG_SERIAL_PRINT(upDelta);
+V0P2BASE_DEBUG_SERIAL_PRINT(' ');
+V0P2BASE_DEBUG_SERIAL_PRINT(newValue);
+V0P2BASE_DEBUG_SERIAL_PRINT(' ');
+V0P2BASE_DEBUG_SERIAL_PRINT(darkThreshold);
+V0P2BASE_DEBUG_SERIAL_PRINT(' ');
+V0P2BASE_DEBUG_SERIAL_PRINT(lightThreshold);
+V0P2BASE_DEBUG_SERIAL_PRINTLN();
+#endif
     // Ignore false trigger at start-up,
     // and only respond to a large-enough jump in light levels.
-    if((~0U != rawValue) && ((newValue - oldValue) >= upDelta))
+    if((~0U != rawValue) && (delta >= upDelta))
       {
-#if 0 && defined(DEBUG)
-DEBUG_SERIAL_PRINT_FLASHSTRING("  UP: ambient light rise/upDelta/newval/dt/lt: ");
-DEBUG_SERIAL_PRINT((newValue - value));
-DEBUG_SERIAL_PRINT(' ');
-DEBUG_SERIAL_PRINT(upDelta);
-DEBUG_SERIAL_PRINT(' ');
-DEBUG_SERIAL_PRINT(newValue);
-DEBUG_SERIAL_PRINT(' ');
-DEBUG_SERIAL_PRINT(darkThreshold);
-DEBUG_SERIAL_PRINT(' ');
-DEBUG_SERIAL_PRINT(lightThreshold);
-DEBUG_SERIAL_PRINTLN();
-#endif
       possOccCallback(); // Ping the callback!
       }
     }
