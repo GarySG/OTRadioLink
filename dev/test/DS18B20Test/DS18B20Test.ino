@@ -1,5 +1,5 @@
-#include <OTRadioLink.h>
 #include <Wire.h>
+#include <OTV0p2Base.h>
 
 OTV0P2BASE::HumiditySensorSHT21 RelHumidity;
 OTV0P2BASE::RoomTemperatureC16_SHT21 TemperatureC16; // SHT21 impl.

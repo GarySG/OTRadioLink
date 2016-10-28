@@ -35,6 +35,7 @@ namespace OTV0P2BASE
 {
 
 
+#ifdef ARDUINO_ARCH_AVR
 #if defined(MinimalOneWireBase_DEFINED) // Required definition.
 // External/off-board DS18B20 temperature sensor in nominal 1/16 C.
 // Requires OneWire support.
@@ -160,5 +161,6 @@ class TemperatureC16_DS18B20 : public TemperatureC16Base
 
   };
 #endif // defined(MinimalOneWireBase_DEFINED) // Required definition.
+#endif // ARDUINO_ARCH_AVR
 }
 #endif
