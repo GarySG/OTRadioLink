@@ -14,6 +14,7 @@ specific language governing permissions and limitations
 under the Licence.
 
 Author(s) / Copyright (s): Damon Hart-Davis 2016
+                           Gary Gladman 2016
 */
 
 /*
@@ -65,11 +66,11 @@ namespace OTRadValve
 ////  pollIO(); // Slip in an I/O poll.
 //  }
 
-// Record local manual operation of a physical UI control, eg not remote or via CLI.
-// Marks room as occupied amongst other things.
+// Record local manual operation of a physical UI control, eg neither remote nor via CLI.
+// Mark controls used given button press - decide on occupation on button release.
 // To be thread-/ISR- safe, everything that this touches or calls must be.
 // Thread-safe.
-void ModeButtonAndPotActuatorPhysicalUI::markUIControlUsed()
+void ModeButtonAndPotActuatorPhysicalUI::markUIControlUsedUnoccupied()
     {
     statusChange = true; // Note user interaction with the system.
     uiTimeoutM = UI_DEFAULT_RECENT_USE_TIMEOUT_M; // Ensure that UI controls are kept 'warm' for a little while.
@@ -78,7 +79,16 @@ void ModeButtonAndPotActuatorPhysicalUI::markUIControlUsed()
 //    // Make CLI active for a while (at some slight possibly-significant energy cost).
 //    resetCLIActiveTimer(); // Thread-safe.
 //  #endif
-    // User operation of physical controls is strong indication of presence.
+    }
+
+// Record local manual operation of a physical UI control, eg not remote or via CLI.
+// Marks room as occupied amongst other things.
+// To be thread-/ISR- safe, everything that this touches or calls must be.
+// Thread-safe.
+void ModeButtonAndPotActuatorPhysicalUI::markUIControlUsed()
+    {
+    markUIControlUsedUnoccupied();
+    // User operation of controls locally is strong indication of presence.
     occupancy->markAsOccupied(); // Thread-safe.
     }
 

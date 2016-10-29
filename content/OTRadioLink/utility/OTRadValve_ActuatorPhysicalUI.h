@@ -14,6 +14,7 @@ specific language governing permissions and limitations
 under the Licence.
 
 Author(s) / Copyright (s): Damon Hart-Davis 2016
+                           Gary Gladman 2016
 */
 
 /*
@@ -241,13 +242,19 @@ class ModeButtonAndPotActuatorPhysicalUI : public ActuatorPhysicalUIBase
 //         (NULL == _LEDoff)) { panic(); }
       }
 
-    // Record local manual operation of a physical UI control, eg not remote or via CLI.
+    // Record local manual operation of a physical UI control, eg neither remote nor via CLI.
+    // Mark controls used given button press - decide on occupation on button release.
+    // To be thread-/ISR- safe, everything that this touches or calls must be.
+    // Thread-safe.
+    void markUIControlUsedUnoccupied();
+
+    // Record local manual operation of a physical UI control, eg neither remote nor via CLI.
     // Marks room as occupied amongst other things.
     // To be thread-/ISR- safe, everything that this touches or calls must be.
     // Thread-safe.
     void markUIControlUsed();
 
-    // Record significant local manual operation of a physical UI control, eg not remote or via CLI.
+    // Record significant local manual operation of a physical UI control, eg neither remote nor via CLI.
     // Marks room as occupied amongst other things.
     // As markUIControlUsed() but likely to generate some feedback to the user, ASAP.
     // Thread-safe.
@@ -356,6 +363,8 @@ class CycleModeAndLearnButtonsAndPotActuatorPhysicalUI : public ModeButtonAndPot
     // Defaults to (starts as) false/FROST.
     bool isWarmModePutative;
     bool isBakeModePutative;
+    bool wasWarmMode;
+    bool wasBakeMode;
     bool modeButtonWasPressed;
 
   protected:
@@ -377,13 +386,15 @@ class CycleModeAndLearnButtonsAndPotActuatorPhysicalUI : public ModeButtonAndPot
           {
           // Capture real mode variable as button is pressed.
           isWarmModePutative = valveMode->inWarmMode();
+          wasWarmMode = isWarmModePutative;
           isBakeModePutative = valveMode->inBakeMode();
+          wasBakeMode = isBakeModePutative;
           modeButtonWasPressed = true;
           }
 
         // User is pressing the mode button: cycle through FROST | WARM [ | BAKE ].
-        // Mark controls used and room as currently occupied given button press.
-        markUIControlUsed();
+        // Mark controls used given button press - decide on occupation on button release.
+        markUIControlUsedUnoccupied();
         // LED on...
         this->LEDon();
         tinyPause(); // Leading tiny pause...
@@ -424,15 +435,33 @@ class CycleModeAndLearnButtonsAndPotActuatorPhysicalUI : public ModeButtonAndPot
           {
           // Don't update the debounced WARM mode while button held down.
           // Will also capture programmatic changes to isWarmMode, eg from schedules.
-          const bool isWarmModeDebounced = isWarmModePutative;
-          valveMode->setWarmModeDebounced(isWarmModeDebounced);
-          if(isBakeModePutative) { valveMode->startBake(); } else { valveMode->cancelBakeDebounced(); }
-          this->markUIControlUsed(); // Note activity on release of MODE button...
-          modeButtonWasPressed = false;
-          return(false);
+#if 1
+          // ENABLE_MODE_CHANGE_ON_CHANGE_ONLY
+          if((isWarmModePutative == wasWarmMode) && (isBakeModePutative == wasBakeMode))
+            {
+            // Mode unchanged.
+            }
+          else  // Mode changed.
+#endif
+            {
+            const bool isWarmModeDebounced = isWarmModePutative;
+            valveMode->setWarmModeDebounced(isWarmModeDebounced);
+            if(isBakeModePutative) { valveMode->startBake(); } else { valveMode->cancelBakeDebounced(); }
+            // Note activity and occupation on release of MODE button...
+#if 1
+            // ENABLE_NO_OCCUPATION_ON_FROST
+            // ... BUT ignore occupation on entering frost (entering frost typically signals departure)
+            if(isWarmModeDebounced)
+#endif
+              {
+              this->markUIControlUsed(); // Note activity on release of MODE button...
+              }
+            }
+            modeButtonWasPressed = false;
+            return(false);
           }
         }
-      return(modeButtonIsPressed);
+        return(modeButtonIsPressed);
       }
 
     // Called after handling main controls to handle other buttons and user controls.
