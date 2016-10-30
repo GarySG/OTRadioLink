@@ -443,7 +443,7 @@ class CycleModeAndLearnButtonsAndPotActuatorPhysicalUI : public ModeButtonAndPot
           {
           // Don't update the debounced WARM mode while button held down.
           // Will also capture programmatic changes to isWarmMode, eg from schedules.
-#if 1
+#if 0
           // ENABLE_MODE_CHANGE_ON_CHANGE_ONLY
           if((isWarmModePutative == wasWarmMode) && (isBakeModePutative == wasBakeMode))
             {
@@ -456,7 +456,7 @@ class CycleModeAndLearnButtonsAndPotActuatorPhysicalUI : public ModeButtonAndPot
             valveMode->setWarmModeDebounced(isWarmModeDebounced);
             if(isBakeModePutative) { valveMode->startBake(); } else { valveMode->cancelBakeDebounced(); }
             // Note activity and occupation on release of MODE button...
-#if 1
+#if 0
             // ENABLE_NO_OCCUPATION_ON_FROST
             // ... BUT ignore occupation on entering frost (entering frost typically signals departure)
             if(isWarmModeDebounced)
