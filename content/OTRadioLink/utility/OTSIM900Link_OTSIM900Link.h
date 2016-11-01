@@ -20,7 +20,7 @@ Author(s) / Copyright (s): Deniz Erbilgin 2015--2016
 /*
  * SIM900 Arduino (2G) GSM shield support.
  *
- * V0p2/AVR only.
+ * Fully operative for V0p2/AVR only.
  */
 
 #ifndef OTSIM900LINK_H_
@@ -64,7 +64,6 @@ Author(s) / Copyright (s): Deniz Erbilgin 2015--2016
 #endif // OTSIM900LINK_DEBUG
 
 
-
 /**
  * @note    To use library:
  *             - create \0 terminated array containing pin, apn, and udp data
@@ -76,11 +75,10 @@ Author(s) / Copyright (s): Deniz Erbilgin 2015--2016
  *             - queueToSend starts GPRS, opens UDP, sends message then deactivates GPRS. Process takes 5-10 seconds
  */
 
+
 namespace OTSIM900Link
 {
 
-
-#ifdef ARDUINO_ARCH_AVR
 
 /**
  * @struct    OTSIM900LinkConfig_t
@@ -95,7 +93,7 @@ namespace OTSIM900Link
  */
 // If config is stored in SRAM...
 #define OTSIM900LinkConfig_DEFINED
-typedef struct OTSIM900LinkConfig {
+typedef struct OTSIM900LinkConfig final {
 //private:
     // Is in eeprom?
     const bool bEEPROM;
@@ -117,8 +115,9 @@ typedef struct OTSIM900LinkConfig {
      * @param    field    memory location
      * @retval    length of data copied to buffer
      */
-    char get(const uint8_t *src) const{
+    char get(const uint8_t *src) const {
         char c = 0;
+#ifdef ARDUINO_ARCH_AVR
         switch (bEEPROM) {
         case true:
             c = eeprom_read_byte(src);
@@ -127,6 +126,7 @@ typedef struct OTSIM900LinkConfig {
             c = pgm_read_byte(src);
             break;
         }
+#endif // ARDUINO_ARCH_AVR
         return c;
     }
 } OTSIM900LinkConfig_t;
@@ -151,6 +151,35 @@ enum OTSIM900LinkState {
         PANIC
     };
 
+// Includes string constants.
+class OTSIM900LinkBase : public OTRadioLink::OTRadioLink
+  {
+  protected:
+       static const char *AT_START;
+       static const char *AT_SIGNAL;
+       static const char *AT_NETWORK;
+       static const char *AT_REGISTRATION; // GSM registration.
+       static const char *AT_GPRS_REGISTRATION0; // GPRS registration.
+       static const char *AT_GPRS_REGISTRATION; // GPRS registration.
+       static const char *AT_SET_APN;
+       static const char *AT_START_GPRS;
+       static const char *AT_GET_IP;
+       static const char *AT_PIN;
+       static const char *AT_STATUS;
+       static const char *AT_START_UDP;
+       static const char *AT_SEND_UDP;
+       static const char *AT_CLOSE_UDP;
+       static const char *AT_SHUT_GPRS;
+       static const char *AT_VERBOSE_ERRORS;
+
+       // Single characters.
+       const char ATc_GET_MODULE = 'I';
+       const char ATc_SET = '=';
+       const char ATc_QUERY = '?';
+  };
+
+
+constexpr uint16_t SIM900_MAX_baud = 9600; // Max reliable baud to talk to SIM900 over OTSoftSerial2.
 
 /**
  * @note    To enable serial debug define 'OTSIM900LINK_DEBUG'
@@ -160,24 +189,47 @@ enum OTSIM900LinkState {
  *             Make OTSIM900LinkBase to abstract serial interface and allow templating?
  */
 #define OTSIM900Link_DEFINED
-template<uint8_t rxPin, uint8_t txPin>
-class OTSIM900Link : public OTRadioLink::OTRadioLink
+template<uint8_t rxPin, uint8_t txPin,
+  uint8_t PWR_PIN,
+  class ser_t
+    #ifdef OTSoftSerial2_DEFINED
+      = OTV0P2BASE::OTSoftSerial2<rxPin, txPin, SIM900_MAX_baud>
+    #endif
+  >
+class OTSIM900Link final : public OTSIM900LinkBase
 {
   // Maximum number of significant chars in the SIM900 response.
   // Minimising this reduces stack and/or global space pressures.
-  static const uint8_t MAX_SIM900_RESPONSE_CHARS = 64;
+  static const int MAX_SIM900_RESPONSE_CHARS = 64;
+
+#ifdef ARDUINO_ARCH_AVR
+  // Regard as true when within a few ticks of start of 2s major cycle.
+  inline bool nearStartOfMajorCycle() { return(OTV0P2BASE::getSubCycleTime() < 10); }
+#else
+  // Regard as always true when not running embedded.
+  inline bool nearStartOfMajorCycle() { return(true); }
+#endif
+
+#ifdef ARDUINO_ARCH_AVR
+  // Sets power pin HIGH if true, LOW if false.
+  inline void setPwrPinHigh(const bool high) { fastDigitalWrite(PWR_PIN, high ? HIGH : LOW); }
+#else
+  // Does nothing when not running embedded.
+  inline void setPwrPinHigh(const bool) { }
+#endif
+
 
 public:
-    /**
-    * @brief    Constructor. Initializes softSerial and sets PWR_PIN
-    * @param    pwrPin        SIM900 power on/off pin
-    * @param    rxPin        Rx pin for software serial
-    * @param    txPin        Tx pin for software serial
-    *
-    * Cannot do anything with side-effects,
-    * as may be called before run-time fully initialised!
-    */
-    OTSIM900Link(uint8_t hardPwrPin, uint8_t pwrPin) : HARD_PWR_PIN(hardPwrPin), PWR_PIN(pwrPin)
+	/**
+	* @brief    Constructor. Initializes softSerial and sets PWR_PIN
+	* @param    pwrPin        SIM900 power on/off pin
+	* @param    rxPin        Rx pin for software serial
+	* @param    txPin        Tx pin for software serial
+	*
+	* Cannot do anything with side-effects,
+	* as may be called before run-time fully initialised!
+	*/
+    OTSIM900Link(/*uint8_t hardPwrPin, uint8_t pwrPin*/) /* : HARD_PWR_PIN(hardPwrPin), PWR_PIN(pwrPin) */
     {
         bAvailable = false;
         bPowered = false;
@@ -194,18 +246,21 @@ public:
     /**
      * @brief    Starts software serial, checks for module and inits state machine.
      */
-    bool begin()
+    virtual bool begin() override
     {
+#ifdef ARDUINO_ARCH_AVR
         pinMode(PWR_PIN, OUTPUT);
-        fastDigitalWrite(PWR_PIN, LOW);
+#endif
+        setPwrPinHigh(false);
         ser.begin(0);
         state = GET_STATE;
         return true;
     }
+
     /**
      * @brief    close UDP connection and power down SIM module
      */
-    bool end()
+    virtual bool end() override
     {
         closeUDP();
     //    powerOff(); TODO fix this
@@ -221,7 +276,7 @@ public:
      * @retval  returns true if send process inited.
      * @note    requires calling of poll() to check if message sent successfully
      */
-    bool sendRaw(const uint8_t *buf, uint8_t buflen, int8_t channel = 0, TXpower power = TXnormal, bool listenAfter = false)
+    virtual bool sendRaw(const uint8_t *buf, uint8_t buflen, int8_t channel = 0, TXpower power = TXnormal, bool listenAfter = false) override
     {
         bool bSent = false;
         OTSIM900LINK_DEBUG_SERIAL_PRINTLN_FLASHSTRING("Send Raw")
@@ -237,7 +292,7 @@ public:
      * @retval  returns true if send process inited.
      * @note    requires calling of poll() to check if message sent successfully.
      */
-    bool queueToSend(const uint8_t *buf, uint8_t buflen, int8_t , TXpower )
+    virtual bool queueToSend(const uint8_t *buf, uint8_t buflen, int8_t , TXpower) override
     {
         if ((buf == NULL) || (buflen > sizeof(txQueue))) return false;    //
 //        if ((buf == NULL) || (buflen > sizeof(txQueue)) || (txMessageQueue >= maxTxQueueLength)) return false;    //
@@ -249,14 +304,16 @@ public:
         txMsgLen = buflen;
         return true;
     }
-    inline bool isAvailable(){ return bAvailable; };     // checks radio is there independent of power state
+
+    virtual bool isAvailable() const override { return bAvailable; };     // checks radio is there independent of power state
+
     /**
      * @brief   Polling routine steps through 4 stage state machine
      */
-    void poll()
+    virtual void poll() override
     {
         if (bPowerLock == false) {
-            if (OTV0P2BASE::getSubCycleTime() < 10) {
+            if (nearStartOfMajorCycle()) {
                 if(messageCounter == 255) {  // FIXME an attempt at forcing a hard restart every 255 messages.
                     messageCounter = 0;  // reset counter.
                     state = RESET;
@@ -405,7 +462,7 @@ public:
      * @brief    This will be called in interrupt while waiting for send prompt
      * @retval    returns true on successful exit
      */
-    bool handleInterruptSimple() {return true;}
+    virtual bool handleInterruptSimple() override {return true;}
 
 #ifndef OTSIM900LINK_DEBUG // This is included to ease unit testing.
 private:
@@ -413,41 +470,17 @@ private:
 
  /***************** AT Commands and Private Constants and variables ******************/
     static const constexpr uint8_t duration = 10;  // DE20160703:Increased duration due to startup issues.
-    static const constexpr uint16_t baud = 9600; // max reliable baud
     static const constexpr uint8_t flushTimeOut = 10;
-
-    // set AT commands here
-    // These may not be supported by all sim modules so may need to move
-    // to concrete implementation
-    static const char AT_START[3];
-    static const char AT_SIGNAL[5];
-    static const char AT_NETWORK[6];
-    static const char AT_REGISTRATION[6];
-    static const char AT_GPRS_REGISTRATION0[7];
-    static const char AT_GPRS_REGISTRATION[7];
-    static const char AT_SET_APN[6];
-    static const char AT_START_GPRS[7];
-    static const char AT_SHUT_GPRS[9];
-    static const char AT_GET_IP[7];
-    static const char AT_PIN[6];
-    static const char AT_STATUS[11];
-    static const char AT_START_UDP[10];
-    static const char AT_SEND_UDP[9];
-    static const char AT_CLOSE_UDP[10];
-    static const char AT_VERBOSE_ERRORS[6];
-
-    static const char AT_GET_MODULE = 'I';
-    static const char AT_SET = '=';
-    static const char AT_QUERY = '?';
-//    static const char AT_END = '\r';
 
     // Standard Responses
 
-  // pins for software serial
-  const uint8_t HARD_PWR_PIN;
-  const uint8_t PWR_PIN;
-  //SoftwareSerial softSerial;
-  OTV0P2BASE::OTSoftSerial2<rxPin, txPin, baud> ser;
+//  // pins for software serial
+//  const uint8_t HARD_PWR_PIN;
+//  const uint8_t PWR_PIN;
+
+  // Software serial: for V0p2 boards (eg REV10) expected to be of type:
+  //     OTV0P2BASE::OTSoftSerial2<rxPin, txPin, baud>
+  ser_t ser;
 
   // variables
   bool bAvailable;
@@ -476,7 +509,7 @@ private:
      */
     inline void powerOn()
     {
-      fastDigitalWrite(PWR_PIN, LOW);
+      setPwrPinHigh(false); // fastDigitalWrite(PWR_PIN, LOW);
       if(!isPowered()) powerToggle();
     }
 
@@ -485,7 +518,7 @@ private:
      */
     inline void powerOff()
     {
-      fastDigitalWrite(PWR_PIN, LOW);
+      setPwrPinHigh(false);
       if(isPowered()) powerToggle();
     }
 
@@ -495,9 +528,11 @@ private:
      */
     void powerToggle()
     {
-        fastDigitalWrite(PWR_PIN, HIGH);
-        delay(1500);  // This is the minimum value that worked reliably
-        fastDigitalWrite(PWR_PIN, LOW);
+        setPwrPinHigh(true);
+#ifdef ARDUINO_ARCH_AVR
+        delay(1500);  // This is the minimum value that worked reliably.
+#endif // ARDUINO_ARCH_AVR
+        setPwrPinHigh(false);
         bPowered = !bPowered;
     //    delay(3000);
         bPowerLock = true;
@@ -557,9 +592,9 @@ private:
      */
     bool checkModule()
     {
-    char data[min(32, MAX_SIM900_RESPONSE_CHARS)];
+    char data[OTV0P2BASE::fnmin(32, MAX_SIM900_RESPONSE_CHARS)];
         ser.print(AT_START);
-        ser.println(AT_GET_MODULE);
+        ser.println(ATc_GET_MODULE);
     //    ser.print(AT_END);
         timedBlockingRead(data, sizeof(data));
         OTSIM900LINK_DEBUG_SERIAL_PRINT(data)
@@ -578,7 +613,7 @@ private:
         char data[MAX_SIM900_RESPONSE_CHARS];
         ser.print(AT_START);
         ser.print(AT_NETWORK);
-        ser.println(AT_QUERY);
+        ser.println(ATc_QUERY);
     //    ser.print(AT_END);
         timedBlockingRead(data, sizeof(data));
         return true;
@@ -594,7 +629,7 @@ private:
         char data[MAX_SIM900_RESPONSE_CHARS];
         ser.print(AT_START);
         ser.print(AT_REGISTRATION);
-        ser.println(AT_QUERY);
+        ser.println(ATc_QUERY);
     //    ser.print(AT_END);
         timedBlockingRead(data, sizeof(data));
         // response stuff
@@ -615,7 +650,7 @@ private:
         char data[MAX_SIM900_RESPONSE_CHARS]; // FIXME: was 96: that's a LOT of stack!
         ser.print(AT_START);
         ser.print(AT_SET_APN);
-        ser.print(AT_SET);
+        ser.print(ATc_SET);
         printConfig(config->APN);
         ser.println();
         timedBlockingRead(data, sizeof(data));
@@ -635,7 +670,7 @@ private:
      */
     uint8_t startGPRS()
     {
-        char data[min(16, MAX_SIM900_RESPONSE_CHARS)];
+        char data[OTV0P2BASE::fnmin(16, MAX_SIM900_RESPONSE_CHARS)];
         ser.print(AT_START);
         ser.println(AT_START_GPRS);
     //    ser.print(AT_END);
@@ -719,7 +754,7 @@ private:
      */
     void getSignalStrength()
     {
-        char data[min(32, MAX_SIM900_RESPONSE_CHARS)];
+        char data[OTV0P2BASE::fnmin(32, MAX_SIM900_RESPONSE_CHARS)];
         ser.print(AT_START);
         ser.println(AT_SIGNAL);
     //    ser.print(AT_END);
@@ -739,7 +774,7 @@ private:
         char data[MAX_SIM900_RESPONSE_CHARS];
         ser.print(AT_START);
         ser.print(AT_VERBOSE_ERRORS);
-        ser.print(AT_SET);
+        ser.print(ATc_SET);
         ser.println((char)(level + '0'));
     //    ser.print(AT_END);
         timedBlockingRead(data, sizeof(data));
@@ -751,11 +786,11 @@ private:
      */
     uint8_t setPIN()
     {
-        if(config->PIN == NULL) return 0; // do not attempt to set pin if NULL pointer.
+        if(NULL == config->PIN) { return 0; } // do not attempt to set PIN if NULL pointer.
         char data[MAX_SIM900_RESPONSE_CHARS];
         ser.print(AT_START);
         ser.print(AT_PIN);
-        ser.print(AT_SET);
+        ser.print(ATc_SET);
         printConfig(config->PIN);
         ser.println();
 //        timedBlockingRead(data, sizeof(data));  // todo redundant until function properly implemented.
@@ -768,10 +803,10 @@ private:
      */
     bool checkPIN()
     {
-        char data[min(40, MAX_SIM900_RESPONSE_CHARS)];
+        char data[OTV0P2BASE::fnmin(40, MAX_SIM900_RESPONSE_CHARS)];
         ser.print(AT_START);
         ser.print(AT_PIN);
-        ser.println(AT_QUERY);
+        ser.println(ATc_QUERY);
     //    ser.print(AT_END);
         timedBlockingRead(data, sizeof(data));
 
@@ -906,7 +941,7 @@ private:
         ser.println(length);
     //    ser.print(AT_END);
         if (flushUntil('>')) {  // '>' indicates module is ready for UDP frame
-            ser.write(frame, length);
+            (static_cast<Print *>(&ser))->write(frame, length);
             OTSIM900LINK_DEBUG_SERIAL_PRINTLN_FLASHSTRING("*success")
             return true;
         } else {
@@ -949,7 +984,7 @@ private:
     * @brief     Assigns OTSIM900LinkConfig config. Must be called before begin()
     * @retval    returns true if assigned or false if config is NULL
     */
-    bool _doconfig()
+    virtual bool _doconfig() override
     {
        if (channelConfig->config == NULL) return false;
        else {
@@ -966,64 +1001,24 @@ private:
 
 public:    // define abstract methods here
     // These are unused as no RX
-    virtual void _dolisten() {}
+    virtual void _dolisten() override {}
     /**
      * @todo    function to get maxTXMsgLen?
      */
-    virtual void getCapacity(uint8_t &queueRXMsgsMin, uint8_t &maxRXMsgLen, uint8_t &maxTXMsgLen) const {
+    virtual void getCapacity(uint8_t &queueRXMsgsMin, uint8_t &maxRXMsgLen, uint8_t &maxTXMsgLen) const override {
         queueRXMsgsMin = 0;
         maxRXMsgLen = 0;
         maxTXMsgLen = 64;
     };
-    virtual uint8_t getRXMsgsQueued() const {return 0;}
-    virtual const volatile uint8_t *peekRXMsg() const {return 0;}
-    virtual void removeRXMsg() {}
-
+    virtual uint8_t getRXMsgsQueued() const override {return 0;}
+    virtual const volatile uint8_t *peekRXMsg() const override {return 0;}
+    virtual void removeRXMsg() override {}
 
 /* other methods (copied from OTRadioLink as is)
 virtual void preinit(const void *preconfig) {}    // not really relevant?
 virtual void panicShutdown() { preinit(NULL); }    // see above
 */
 };
-
-
-//const char AT_[] = "";
-template<uint8_t rxPin, uint8_t txPin>
-const char OTSIM900Link<rxPin, txPin>::AT_START[3] = "AT";
-template<uint8_t rxPin, uint8_t txPin>
-const char OTSIM900Link<rxPin, txPin>::AT_SIGNAL[5] = "+CSQ";
-template<uint8_t rxPin, uint8_t txPin>
-const char OTSIM900Link<rxPin, txPin>::AT_NETWORK[6] = "+COPS";
-template<uint8_t rxPin, uint8_t txPin>
-const char OTSIM900Link<rxPin, txPin>::AT_REGISTRATION[6] = "+CREG"; // GSM registration.
-template<uint8_t rxPin, uint8_t txPin>
-const char OTSIM900Link<rxPin, txPin>::AT_GPRS_REGISTRATION0[7] = "+CGATT"; // GPRS registration.
-template<uint8_t rxPin, uint8_t txPin>
-const char OTSIM900Link<rxPin, txPin>::AT_GPRS_REGISTRATION[7] = "+CGREG"; // GPRS registration.
-template<uint8_t rxPin, uint8_t txPin>
-const char OTSIM900Link<rxPin, txPin>::AT_SET_APN[6] = "+CSTT";
-template<uint8_t rxPin, uint8_t txPin>
-const char OTSIM900Link<rxPin, txPin>::AT_START_GPRS[7] = "+CIICR";
-template<uint8_t rxPin, uint8_t txPin>
-const char OTSIM900Link<rxPin, txPin>::AT_GET_IP[7] = "+CIFSR";
-template<uint8_t rxPin, uint8_t txPin>
-const char OTSIM900Link<rxPin, txPin>::AT_PIN[6] = "+CPIN";
-
-template<uint8_t rxPin, uint8_t txPin>
-const char OTSIM900Link<rxPin, txPin>::AT_STATUS[11] = "+CIPSTATUS";
-template<uint8_t rxPin, uint8_t txPin>
-const char OTSIM900Link<rxPin, txPin>::AT_START_UDP[10] = "+CIPSTART";
-template<uint8_t rxPin, uint8_t txPin>
-const char OTSIM900Link<rxPin, txPin>::AT_SEND_UDP[9] = "+CIPSEND";
-template<uint8_t rxPin, uint8_t txPin>
-const char OTSIM900Link<rxPin, txPin>::AT_CLOSE_UDP[10] = "+CIPCLOSE";
-template<uint8_t rxPin, uint8_t txPin>
-const char OTSIM900Link<rxPin, txPin>::AT_SHUT_GPRS[9] = "+CIPSHUT";
-
-template<uint8_t rxPin, uint8_t txPin>
-const char OTSIM900Link<rxPin, txPin>::AT_VERBOSE_ERRORS[6] = "+CMEE";
-
-#endif // ARDUINO_ARCH_AVR
 
 
 }    // namespace OTSIM900Link

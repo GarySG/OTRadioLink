@@ -174,6 +174,67 @@ if(verbose) { fprintf(stderr, "@ %d %d\n", offset, valvePCOpen); }
         }
 }
 
+// Test of ModelledRadValveComputeTargetTempBasic algorithm for computing the target temperature.
+namespace MRVCTTB
+    {
+    // Instances with linkage to support the test.
+    static OTRadValve::ValveMode valveMode;
+    static OTV0P2BASE::TemperatureC16Mock roomTemp;
+    static OTRadValve::TempControlSimpleVCP<OTRadValve::DEFAULT_ValveControlParameters> tempControl;
+    static OTV0P2BASE::PseudoSensorOccupancyTracker occupancy;
+    static OTV0P2BASE::SensorAmbientLightMock ambLight;
+    static OTRadValve::NULLActuatorPhysicalUI physicalUI;
+    static OTV0P2BASE::NULLValveSchedule schedule;
+    static OTV0P2BASE::NULLByHourByteStatsBase byHourStats;
+    }
+TEST(ModelledRadValve,ModelledRadValveComputeTargetTempBasic)
+{
+    // Simple-as-possible instance.
+    OTRadValve::ModelledRadValveComputeTargetTempBasic<
+        OTRadValve::DEFAULT_ValveControlParameters,
+        &MRVCTTB::valveMode,
+        decltype(MRVCTTB::roomTemp),                    &MRVCTTB::roomTemp,
+        decltype(MRVCTTB::tempControl),                 &MRVCTTB::tempControl,
+        decltype(MRVCTTB::occupancy),                   &MRVCTTB::occupancy,
+        decltype(MRVCTTB::ambLight),                    &MRVCTTB::ambLight,
+        decltype(MRVCTTB::physicalUI),                  &MRVCTTB::physicalUI,
+        decltype(MRVCTTB::schedule),                    &MRVCTTB::schedule,
+        decltype(MRVCTTB::byHourStats),                 &MRVCTTB::byHourStats,
+        ((bool(*)())NULL)
+        > cttb0;
+    EXPECT_FALSE(MRVCTTB::valveMode.inWarmMode());
+    const uint8_t f = OTRadValve::DEFAULT_ValveControlParameters::FROST;
+    EXPECT_EQ(f, cttb0.computeTargetTemp()) << "should start in FROST mode";
+    MRVCTTB::valveMode.setWarmModeDebounced(true);
+    const uint8_t w = OTRadValve::DEFAULT_ValveControlParameters::WARM;
+    EXPECT_EQ(w, cttb0.computeTargetTemp());
+    // Make the room dark (and marked as dark for a long time).
+    MRVCTTB::ambLight.set(0, 255U, false);
+    MRVCTTB::ambLight.read();
+    EXPECT_TRUE(MRVCTTB::ambLight.isRoomDark());
+    EXPECT_EQ(255, MRVCTTB::ambLight.getDarkMinutes());
+    EXPECT_GT(w, cttb0.computeTargetTemp()) << "room dark for a reasonable time should allow setback";
+    // Make the room light.
+    MRVCTTB::ambLight.set(255, 0, false);
+    MRVCTTB::ambLight.read();
+    EXPECT_FALSE(MRVCTTB::ambLight.isRoomDark());
+    EXPECT_EQ(0, MRVCTTB::ambLight.getDarkMinutes());
+    EXPECT_EQ(w, cttb0.computeTargetTemp());
+    // Mark long-term vacancy with holiday mode.
+    MRVCTTB::occupancy.setHolidayMode();
+    EXPECT_GT(w, cttb0.computeTargetTemp()) << "holiday mode should allow setback";
+    // Make the room dark (and marked as dark for a long time).
+    MRVCTTB::ambLight.set(0, 255U, false);
+    MRVCTTB::ambLight.read();
+    EXPECT_TRUE(MRVCTTB::ambLight.isRoomDark());
+    EXPECT_EQ(255, MRVCTTB::ambLight.getDarkMinutes());
+    const uint8_t sbFULL = OTRadValve::DEFAULT_ValveControlParameters::SETBACK_FULL;
+    EXPECT_EQ(w-sbFULL, cttb0.computeTargetTemp()) << "room dark for a reasonable time AND holiday mode should allow full setback";
+    MRVCTTB::valveMode.startBake();
+    const uint8_t bu = OTRadValve::DEFAULT_ValveControlParameters::BAKE_UPLIFT;
+    EXPECT_EQ(w+bu, cttb0.computeTargetTemp()) << "BAKE should win and force full uplift from WARM";
+}
+
 // Test the logic in ModelledRadValveState to open fast from well below target (TODO-593).
 // This is to cover the case where the use manually turns on/up the valve
 // and expects quick response from the valve

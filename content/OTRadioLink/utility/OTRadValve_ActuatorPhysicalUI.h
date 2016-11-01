@@ -87,11 +87,13 @@ class ActuatorPhysicalUIBase : public OTV0P2BASE::SimpleTSUint8Actuator
 
 // Null UI: always returns false for read() and does nothing with set().
 // Has no physical interactions with devices.
-class NullActuatorPhysicalUI : public ActuatorPhysicalUIBase
+class NULLActuatorPhysicalUI : public ActuatorPhysicalUIBase
   {
   public:
     // Does nothing and forces 'sensor' value to 0 and returns 0.
-    virtual uint8_t read() { value = 0; return(value); }
+    virtual uint8_t read() override { value = 0; return(value); }
+    virtual bool veryRecentUIControlUse() const override { return(false); }
+    virtual bool recentUIControlUse() const override { return(false); };
   };
 
 
@@ -363,7 +365,7 @@ class ModeButtonAndPotActuatorPhysicalUI : public ActuatorPhysicalUIBase
 //
 #define CycleModeAndLearnButtonsAndPotActuatorPhysicalUI_DEFINED
 template <int BUTTON_MODE_L_pin>
-class CycleModeAndLearnButtonsAndPotActuatorPhysicalUI : public ModeButtonAndPotActuatorPhysicalUI
+class CycleModeAndLearnButtonsAndPotActuatorPhysicalUI final : public ModeButtonAndPotActuatorPhysicalUI
   {
   private:
     // If true then is in WARM (or BAKE) mode; defaults to (starts as) false/FROST.

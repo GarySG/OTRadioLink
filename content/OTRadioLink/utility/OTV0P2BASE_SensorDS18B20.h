@@ -53,7 +53,7 @@ namespace OTV0P2BASE
 // Not all template parameter combinations may be supported.
 // Provides temperature as a signed int value with 0C == 0 at all precisions.
 #define TemperatureC16_DS18B20_DEFINED
-class TemperatureC16_DS18B20 : public TemperatureC16Base
+class TemperatureC16_DS18B20 final : public TemperatureC16Base
   {
   public:
     // Maximum number of corrected sensors.
