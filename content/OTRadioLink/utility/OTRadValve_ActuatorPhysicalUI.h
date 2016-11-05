@@ -97,32 +97,42 @@ class NULLActuatorPhysicalUI : public ActuatorPhysicalUIBase
   };
 
 
-#ifdef ARDUINO_ARCH_AVR
+//#ifdef ARDUINO_ARCH_AVR
 
 // Supports boost/MODE button, temperature pot, and a single HEATCALL LED.
 // This does not support LEARN buttons; a derived class does.
 #define ModeButtonAndPotActuatorPhysicalUI_DEFINED
 class ModeButtonAndPotActuatorPhysicalUI : public ActuatorPhysicalUIBase
   {
-  public:
+  protected:
+    static const uint8_t VERYTINY_PAUSE_MS = 5;
+    static const uint8_t TINY_PAUSE_MS = 15;
+    static const uint8_t SMALL_PAUSE_MS = 30;
+    static const uint8_t MEDIUM_PAUSE_MS = 60;
+    static const uint8_t BIG_PAUSE_MS = 120;
+
+#ifdef ARDUINO_ARCH_AVR
     // Use WDT-based timer for xxxPause() routines.
     // Very tiny low-power sleep.
-    static const uint8_t VERYTINY_PAUSE_MS = 5;
     static void inline veryTinyPause() { OTV0P2BASE::sleepLowPowerMs(VERYTINY_PAUSE_MS); }
     // Tiny low-power sleep to approximately match the PICAXE V0.09 routine of the same name.
-    static const uint8_t TINY_PAUSE_MS = 15;
     static void inline tinyPause() { OTV0P2BASE::nap(WDTO_15MS); } // 15ms vs 18ms nominal for PICAXE V0.09 impl.
     // Small low-power sleep.
-    static const uint8_t SMALL_PAUSE_MS = 30;
     static void inline smallPause() { OTV0P2BASE::nap(WDTO_30MS); }
     // Medium low-power sleep to approximately match the PICAXE V0.09 routine of the same name.
     // Premature wakeups MAY be allowed to avoid blocking I/O polling for too long.
-    static const uint8_t MEDIUM_PAUSE_MS = 60;
     static void inline mediumPause() { OTV0P2BASE::nap(WDTO_60MS); } // 60ms vs 144ms nominal for PICAXE V0.09 impl.
     // Big low-power sleep to approximately match the PICAXE V0.09 routine of the same name.
     // Premature wakeups MAY be allowed to avoid blocking I/O polling for too long.
-    static const uint8_t BIG_PAUSE_MS = 120;
     static void inline bigPause() { OTV0P2BASE::nap(WDTO_120MS); } // 120ms vs 288ms nominal for PICAXE V0.09 impl.
+#else
+    // FIXME: work our suitable/alternative semantics and impl on non-AVR platform(s) including test.
+    static void inline veryTinyPause() { }
+    static void inline tinyPause() { }
+    static void inline smallPause() { }
+    static void inline mediumPause() { }
+    static void inline bigPause() { }
+#endif
 
     // Pause between flashes to allow them to be distinguished (>100ms); was mediumPause() for PICAXE V0.09 impl.
     static void inline offPause()
@@ -135,7 +145,7 @@ class ModeButtonAndPotActuatorPhysicalUI : public ActuatorPhysicalUIBase
     // Marked true if the physical UI controls are being used.
     // Cleared at end of read().
     // Marked volatile for thread-safe lock-free non-read-modify-write access to byte-wide value.
-    volatile bool statusChange;
+    volatile bool statusChange = false;
 
     // Minutes that freshly-touched controls are regarded as 'recently' used.
     static const uint8_t UI_DEFAULT_RECENT_USE_TIMEOUT_M = 31;
@@ -149,7 +159,7 @@ class ModeButtonAndPotActuatorPhysicalUI : public ActuatorPhysicalUIBase
     // Set true on significant local UI operation.
     // Should be cleared when feedback has been given.
     // Marked volatile for thread-safe lockless access;
-    volatile bool significantUIOp;
+    volatile bool significantUIOp = false;
 
     // UI feedback.
     // Provide low-key visual / audio / tactile feedback on a significant user action.
@@ -190,7 +200,7 @@ class ModeButtonAndPotActuatorPhysicalUI : public ActuatorPhysicalUIBase
 
     // Optional temperature pot, r/w access; may be NULL.
     // May have read() called to poll pot status and provoke occupancy callbacks.
-    OTV0P2BASE::SensorTemperaturePot *const tempPotOpt;
+    OTV0P2BASE::SensorTemperaturePotBase *const tempPotOpt;
 
     // Read-only acces to optional low-battery sensor; may be NULL.
     const OTV0P2BASE::SupplyVoltageLow *const lowBattOpt;
@@ -241,7 +251,7 @@ class ModeButtonAndPotActuatorPhysicalUI : public ActuatorPhysicalUIBase
       const AbstractRadValve *const _valveController,
       OTV0P2BASE::PseudoSensorOccupancyTracker *const _occupancy,
       const OTV0P2BASE::SensorAmbientLightBase *const _ambLight,
-      OTV0P2BASE::SensorTemperaturePot *const _tempPotOpt,
+      OTV0P2BASE::SensorTemperaturePotBase *const _tempPotOpt,
       OTV0P2BASE::SupplyVoltageLow *const _lowBattOpt,
       void (*const _LEDon)(), void (*const _LEDoff)(), void (*const _safeISRLEDonOpt)())
       : valveMode(_valveMode), tempControl(_tempControl), valveController(_valveController),
@@ -256,6 +266,8 @@ class ModeButtonAndPotActuatorPhysicalUI : public ActuatorPhysicalUIBase
 //         (NULL == _ambLight) ||
 //         (NULL == _LEDon) ||
 //         (NULL == _LEDoff)) { panic(); }
+      // Ensure UI starts up as not (recently) used.
+      uiTimeoutM.store(0);
       }
 
     // Record local manual operation of a physical UI control, eg neither remote nor via CLI.
@@ -395,7 +407,11 @@ class CycleModeAndLearnButtonsAndPotActuatorPhysicalUI final : public ModeButton
       // Full MODE button behaviour:
       //   * cycle through FROST/WARM/BAKE while held down showing 1/2/3 flashes as appropriate
       //   * switch to selected mode on button release
+#ifdef ARDUINO
       const bool modeButtonIsPressed = (LOW == fastDigitalRead(BUTTON_MODE_L_pin));
+#else
+      const bool modeButtonIsPressed = false; // FIXME
+#endif
       if(modeButtonIsPressed)
         {
         if(!modeButtonWasPressed)
@@ -545,7 +561,7 @@ class CycleModeAndLearnButtonsAndPotActuatorPhysicalUI final : public ModeButton
     //  }
   };
 
-#endif // ARDUINO_ARCH_AVR
+//#endif // ARDUINO_ARCH_AVR
 
 
     }

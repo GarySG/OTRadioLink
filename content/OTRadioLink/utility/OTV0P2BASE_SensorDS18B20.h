@@ -70,7 +70,7 @@ class TemperatureC16_DS18B20 final : public TemperatureC16Base
     const uint8_t precision;
 
     // The number of sensors found on the bus
-    uint8_t numberSensors;
+    uint8_t sensorCount;
 
     // Per sensor error correction.
     int8_t correction[MAX_SENSORS];
@@ -95,7 +95,7 @@ class TemperatureC16_DS18B20 final : public TemperatureC16Base
 
     // Returns true if this sensor is definitely unavailable or behaving incorrectly.
     // This is after an attempt to initialise has not found a DS18B20 on the bus.
-    virtual bool isUnavailable() const { return(initialised && 0U == numberSensors); }
+    virtual bool isAvailable() const { return(initialised && (0 != sensorCount)); }
 
     // Create instance with given OneWire connection, bus ordinal and precision.
     // No two instances should attempt to target the same DS18B20,
@@ -113,7 +113,7 @@ class TemperatureC16_DS18B20 final : public TemperatureC16Base
     uint8_t getPrecisionBits() const { return(precision); }
 
     // return the number of DS18B20 sensors on the bus
-    uint8_t getNumberSensors();
+    uint8_t getSensorCount();
 
     // Force capture and extraction of temperature from the single DS18B20 sensor.
     // Return the value sensed in nominal units of 1/16 C.

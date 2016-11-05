@@ -17,7 +17,7 @@ void setup()
     Serial.begin(4800);
     OTV0P2BASE::serialPrintlnAndFlush("Temp/Humidity test (MAX_PRECISION)");
 
-    numberDS18B20 = extDS18B20.getNumberSensors();
+    numberDS18B20 = extDS18B20.getSensorCount();
     OTV0P2BASE::serialPrintAndFlush("number DS18B20: ");
     OTV0P2BASE::serialPrintAndFlush(numberDS18B20, DEC);
     OTV0P2BASE::serialPrintlnAndFlush();

@@ -128,7 +128,7 @@ bool TemperatureC16_DS18B20::init()
   // Search has been run (whether DS18B20 was found or not).
   initialised = true;
 
-  numberSensors = count;
+  sensorCount = count;
   return(found);
   }
 
@@ -138,7 +138,7 @@ bool TemperatureC16_DS18B20::init()
 uint16_t TemperatureC16_DS18B20::capture(void)
   {
   if(!initialised) { init(); }
-  if(0U == numberSensors) { return(0); }
+  if(0U == sensorCount) { return(0); }
 
   // Start a temperature reading.
   minOW.reset();
@@ -250,10 +250,10 @@ int16_t TemperatureC16_DS18B20::read()
   return(DEFAULT_INVALID_TEMP);
   }
 
-uint8_t TemperatureC16_DS18B20::getNumberSensors()
+uint8_t TemperatureC16_DS18B20::getSensorCount()
   {
   if (!initialised) { init(); }
-  return numberSensors;
+  return sensorCount;
   }
 
 // Calculate the per sensor correction for a number of sensors.
@@ -264,7 +264,7 @@ void TemperatureC16_DS18B20::correct(int8_t * const corr)
   {
   // Average sensor readings to derive and thus correct for individual sensor error.
 
-  const uint8_t n = getNumberSensors();
+  const uint8_t n = getSensorCount();
 
   // Obtain uncorrected readings.
   memset(correction, 0, sizeof(correction));
