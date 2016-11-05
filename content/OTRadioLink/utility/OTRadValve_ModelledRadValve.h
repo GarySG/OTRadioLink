@@ -483,7 +483,7 @@ class ModelledRadValveComputeTargetTempBasic final : public ModelledRadValveComp
         const bool veryRecentUIUse =
                 physicalUI->veryRecentUIControlUse();
         inputState.fastResponseRequired = veryRecentUIUse;
-        // Widen the allowed deadband significantly in an unlit/quiet/vacant room (TODO-383, TODO-593, TODO-786)
+        // Widen the allowed deadband significantly in an unlit/quiet/vacant room (TODO-383, TODO-593, TODO-786, TODO-1037)
         // (or in FROST mode, or if temperature is jittery eg changing fast and filtering has been engaged)
         // to attempt to reduce the total number and size of adjustments and thus reduce noise/disturbance (and battery drain).
         // The wider deadband (less good temperature regulation) might be noticeable/annoying to sensitive occupants.
@@ -514,13 +514,13 @@ class ModelledRadValve final : public AbstractRadValve
     // Target temperature computation.
     const ModelledRadValveComputeTargetTempBase *ctt;
 
-    // Sensor, control and stats inputs for computations.
-    const ModelledRadValveSensorCtrlStats &sensorCtrlStats;
-
     // All input state for deciding where to set the radiator valve in normal operation.
     struct ModelledRadValveInputState inputState;
     // All retained state for deciding where to set the radiator valve in normal operation.
     struct ModelledRadValveState retainedState;
+
+    // Read-only access to temperature control; never NULL.
+    const TempControlBase *const tempControl;
 
     // True if this node is calling for heat.
     // Marked volatile for thread-safe lock-free access.
@@ -557,11 +557,11 @@ class ModelledRadValve final : public AbstractRadValve
     ModelledRadValve(
         const ModelledRadValveComputeTargetTempBase *const _ctt,
         ValveMode *const _valveMode,
-        const ModelledRadValveSensorCtrlStats *_sensorCtrlStats,
+        const TempControlBase *const _tempControl,
         const bool _defaultGlacial = false, const uint8_t _maxPCOpen = 100)
       : ctt(_ctt),
-        sensorCtrlStats(*_sensorCtrlStats),
         retainedState(_defaultGlacial),
+        tempControl(_tempControl),
         glacial(_defaultGlacial),
         maxPCOpen(OTV0P2BASE::fnmin(_maxPCOpen, (uint8_t)100U)),
         valveModeRW(_valveMode)
